@@ -4,7 +4,9 @@ A software recreation of **Plantoid**, the programmable LED tree at Swiss Scienc
 Technorama, Winterthur (exhibit 11938, OG 2 "Et Cetera"). Unofficial; the original is by
 Digital Winterthur and Technorama, with block programming by smoca AG.
 
-Open `index.html` in a browser, or serve the folder (`python3 -m http.server`) and open it.
+Live: https://bersling.github.io/plantoid/
+
+Or open `index.html` in a browser, or serve the folder (`python3 -m http.server`) and open it.
 Everything is one file. three.js and Blockly load from CDNs.
 
 The interface is in Swiss German (no "ß") and written for kids, following the exhibit's own
