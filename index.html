@@ -1,0 +1,1626 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Plantoid Simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Instrument+Sans:wght@400..700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: the exhibition hall (3D tree) fills the left; the programming desk docks right and stacks below on phones.
+   One deliberate dark look: a dim hall where the tree is the light source. --live follows the tree's colour at runtime. */
+:root {
+  --hall: #070606;
+  --desk: #121011;
+  --desk-2: #1c1819;
+  --well: #0c0a0b;
+  --rule: #2b2527;
+  --ink: #f2ebe6;
+  --ink-2: #a89a94;
+  --ink-3: #6f6460;
+  --live: #ff7a3c;
+  --ok: #7fe0a6;
+  --warn: #ffcf66;
+  --bad: #ff7b7b;
+  --hot: #ff9a6b;
+  --f-display: "Bricolage Grotesque", "Avenir Next Condensed", "Arial Narrow", sans-serif;
+  --f-ui: "Instrument Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+html { height: 100%; box-sizing: border-box; background: var(--hall); }
+[hidden] { display: none !important; }
+*, *::before, *::after { box-sizing: inherit; }
+body { height: 100%; margin: 0; background: var(--hall); color: var(--ink); font: 14px/1.45 var(--f-ui); overflow: hidden; -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--live); outline-offset: 2px; }
+
+#app { display: grid; grid-template-columns: minmax(0, 1fr) clamp(400px, 40vw, 640px); height: 100%; }
+body.focus #app { grid-template-columns: minmax(0, 1fr) 0; }
+body.focus #desk { visibility: hidden; }
+
+/* ---------- stage ---------- */
+#stage { position: relative; min-width: 0; overflow: hidden; background: var(--hall); container: stage / size; }
+@container stage (max-width: 760px) {
+  #stage .stage-tools { top: auto; bottom: 14px; right: 12px; }
+  #stage .credit { display: none; }
+}
+#scene { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+#scene:active { cursor: grabbing; }
+.stage-head { position: absolute; top: 22px; left: 24px; pointer-events: none; }
+.stage-head h1 {
+  margin: 0; font: 700 clamp(34px, 4.2vw, 56px)/0.9 var(--f-display); font-variation-settings: "opsz" 96;
+  letter-spacing: -0.035em; color: var(--ink);
+  text-shadow: 0 0 28px color-mix(in srgb, var(--live) 55%, transparent);
+  transition: text-shadow .6s;
+}
+.spec { margin: 10px 0 0; display: flex; flex-wrap: wrap; gap: 6px 14px; font: 500 11px/1 var(--f-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); }
+.spec span + span::before { content: ""; display: inline-block; width: 4px; height: 4px; margin: 0 14px 2px 0; border-radius: 50%; background: var(--live); vertical-align: middle; }
+.stage-tools { position: absolute; top: 22px; right: 20px; display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.chip {
+  display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 12px 0 10px; border-radius: 16px;
+  border: 1px solid var(--rule); background: color-mix(in srgb, var(--desk) 78%, transparent); backdrop-filter: blur(8px);
+  color: var(--ink-2); font-size: 12.5px; font-weight: 600; cursor: pointer; transition: color .15s, border-color .15s, background .15s;
+}
+.chip:hover { color: var(--ink); border-color: #3d3436; }
+.chip[aria-pressed="true"] { color: var(--ink); border-color: color-mix(in srgb, var(--live) 70%, var(--rule)); background: color-mix(in srgb, var(--live) 16%, var(--desk)); }
+.chip svg { width: 16px; height: 16px; }
+.credit { position: absolute; left: 24px; right: 24px; bottom: 18px; margin: 0; max-width: 560px; font-size: 11.5px; line-height: 1.45; color: var(--ink-3); pointer-events: none; text-wrap: pretty; }
+.credit em { font-style: normal; color: var(--ink-2); }
+
+#labels { position: absolute; inset: 0; pointer-events: none; }
+.lbl {
+  position: absolute; left: 0; top: 0; transform: translate(-50%, -50%); pointer-events: auto; cursor: default;
+  min-width: 22px; height: 20px; padding: 0 5px; border-radius: 10px; border: 1px solid #ffffff30;
+  background: #000000a8; color: var(--ink); font: 500 11px/18px var(--f-mono); text-align: center; font-variant-numeric: tabular-nums;
+}
+.lbl:hover { background: var(--ink); color: #000; }
+#marker { position: absolute; left: 0; top: 0; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%; border: 1.5px solid #fff; box-shadow: 0 0 0 3px #00000080; pointer-events: none; }
+#probe {
+  position: absolute; left: 0; top: 0; pointer-events: none; padding: 8px 10px; border-radius: 10px; min-width: 150px;
+  background: #0b0909e8; border: 1px solid var(--rule); box-shadow: 0 8px 24px #0008;
+  font: 12px/1.5 var(--f-mono); color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+#probe b { color: var(--ink); font-weight: 500; }
+#probe .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; border: 1px solid #ffffff30; }
+
+/* ---------- desk ---------- */
+#desk { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--desk); border-left: 1px solid var(--rule); }
+.desk-bar { display: flex; align-items: center; gap: 8px; height: 54px; padding: 0 10px 0 12px; border-bottom: 1px solid var(--rule); flex: none; }
+.tabs { display: inline-flex; padding: 3px; border-radius: 10px; background: var(--well); border: 1px solid var(--rule); }
+.tabs button { height: 30px; padding: 0 14px; border: 0; border-radius: 7px; background: none; color: var(--ink-2); font-weight: 600; font-size: 13px; cursor: pointer; }
+.tabs button[aria-selected="true"] { background: var(--desk-2); color: var(--ink); box-shadow: inset 0 -2px 0 var(--live); }
+.bar-actions { margin-left: auto; display: flex; gap: 2px; align-items: center; }
+.tool {
+  position: relative; display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 10px; border: 0; border-radius: 9px;
+  background: none; color: var(--ink-2); font-weight: 600; font-size: 13px; cursor: pointer; white-space: nowrap;
+}
+.tool:hover, .tool[aria-expanded="true"] { background: var(--desk-2); color: var(--ink); }
+.tool svg { width: 18px; height: 18px; flex: none; }
+.tool .count { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--desk-2); color: var(--ink); font: 500 11px/18px var(--f-mono); text-align: center; }
+.tool .count:empty { display: none; }
+@container desk (max-width: 470px) { .tool .lbl-t { display: none; } }
+#desk { container: desk / inline-size; }
+
+.desk-body { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+#blockly { position: absolute; inset: 0; }
+#paused { position: absolute; inset: 0; z-index: 150; display: grid; place-items: center; padding: 24px; background: #0c0a0bd9; backdrop-filter: blur(2px); }
+#paused[hidden] { display: none; }
+.paused-card { max-width: 340px; text-align: center; }
+.paused-card h2 { margin: 0 0 6px; font: 700 20px/1.2 var(--f-display); }
+.paused-card p { margin: 0 0 16px; color: var(--ink-2); }
+
+#help { position: absolute; inset: 0; z-index: 160; display: grid; place-items: center; padding: 20px; overflow: auto; background: #0c0a0bdb; backdrop-filter: blur(3px); }
+.help-card { width: min(440px, 100%); padding: 24px; border-radius: 18px; background: var(--desk-2); border: 1px solid var(--rule); box-shadow: 0 30px 80px #000c; }
+.help-card h2 { margin: 0 0 18px; font: 700 24px/1.15 var(--f-display); text-wrap: balance; }
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 16px; counter-reset: step; }
+.steps li { display: grid; grid-template-columns: 46px minmax(0, 1fr); gap: 14px; align-items: start; counter-increment: step; }
+.step-ic { position: relative; width: 46px; height: 46px; border-radius: 13px; display: grid; place-items: center; background: var(--c); color: #fff; }
+.step-ic svg { width: 24px; height: 24px; }
+.step-ic::after { content: counter(step); position: absolute; top: -7px; left: -7px; width: 21px; height: 21px; border-radius: 50%; background: var(--ink); color: #120f10; font: 700 11.5px/21px var(--f-mono); text-align: center; }
+.steps p { margin: 0; font-size: 14.5px; line-height: 1.45; color: var(--ink-2); }
+.steps b { display: block; margin-bottom: 1px; color: var(--ink); font-size: 15.5px; }
+.help-tip { margin: 18px 0; padding: 10px 12px; border-radius: 10px; background: var(--well); color: var(--ink-2); font-size: 13.5px; }
+.btn.big { width: 100%; height: 44px; justify-content: center; font-size: 15.5px; }
+#code-pane { position: absolute; inset: 0; z-index: 120; display: flex; flex-direction: column; background: var(--well); }
+#code-pane[hidden] { display: none; }
+.code-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px 10px 16px; border-bottom: 1px solid var(--rule); background: var(--desk); flex: none; }
+.code-head p { margin: 0; flex: 1; min-width: 0; color: var(--ink-2); font-size: 12.5px; }
+.code-head p b { color: var(--ink); font-weight: 600; }
+.btn {
+  display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 14px; border-radius: 9px; cursor: pointer; white-space: nowrap;
+  border: 1px solid var(--rule); background: var(--desk-2); color: var(--ink); font-weight: 600; font-size: 13px;
+}
+.btn:hover { border-color: #463c3e; }
+.btn.primary { background: var(--ink); color: #120f10; border-color: var(--ink); }
+.btn.primary:hover { background: #fff; }
+.editor { position: relative; flex: 1; min-height: 0; }
+.editor pre, .editor textarea {
+  position: absolute; inset: 0; margin: 0; padding: 16px 18px 48px; border: 0; width: 100%; height: 100%;
+  font: 13px/1.65 var(--f-mono); tab-size: 2; white-space: pre; overflow: auto; letter-spacing: 0;
+}
+.editor pre { pointer-events: none; overflow: hidden; color: #d9d0cb; }
+.editor textarea { background: transparent; color: transparent; caret-color: var(--ink); resize: none; outline: none; }
+.editor textarea::selection { background: #ffffff2e; }
+.editor textarea[readonly] { cursor: default; }
+.hl-k { color: #ff9e7a; } .hl-n { color: #ffd27a; } .hl-s { color: #b7e690; } .hl-c { color: #6f6460; font-style: italic; }
+.hl-f { color: #8fd0ff; } .hl-a { color: #f0a8ff; }
+.hl-s[style] { box-shadow: inset 0 -3px 0 var(--sw); }
+.api { flex: none; max-height: 42%; overflow: auto; border-top: 1px solid var(--rule); background: var(--desk); }
+.api summary { cursor: pointer; padding: 10px 16px; font-weight: 600; color: var(--ink-2); font-size: 12.5px; list-style: none; }
+.api summary::before { content: "+"; display: inline-block; width: 16px; font-family: var(--f-mono); color: var(--live); }
+.api[open] summary::before { content: "−"; }
+.api dl { margin: 0; padding: 0 16px 14px; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 14px; font-size: 12px; }
+.api dt { color: var(--ink-2); font-weight: 600; padding-top: 1px; }
+.api dd { margin: 0; font: 12px/1.6 var(--f-mono); color: #8fd0ff; overflow-wrap: anywhere; }
+.api dd i { font-style: normal; color: var(--ink-3); }
+
+.status { display: flex; align-items: center; gap: 10px; height: 50px; padding: 0 8px 0 16px; border-top: 1px solid var(--rule); flex: none; font: 12px/1 var(--f-mono); color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-3); flex: none; }
+.status[data-state="running"] .dot { background: var(--live); box-shadow: 0 0 10px var(--live); animation: pulse 1.6s ease-in-out infinite; }
+.status[data-state="finished"] .dot { background: var(--ok); }
+.status[data-state="error"] .dot { background: var(--bad); }
+.status #st-state { color: var(--ink); font-weight: 500; }
+#st-msg { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--f-ui); font-size: 12.5px; }
+.status[data-state="error"] #st-msg { color: var(--bad); }
+#st-msg.warn { color: var(--warn); }
+.status .tool { height: 34px; }
+@keyframes pulse { 50% { opacity: .45; } }
+
+/* popovers */
+.menu-wrap { position: relative; }
+.pop {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 200; width: min(340px, calc(100vw - 32px)); max-height: min(70vh, 560px); overflow: auto;
+  padding: 6px; border-radius: 14px; border: 1px solid var(--rule); background: var(--desk-2); box-shadow: 0 18px 48px #000a;
+}
+.pop-title { margin: 6px 10px 8px; font: 600 11px/1 var(--f-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+.ex { display: flex; gap: 12px; width: 100%; align-items: flex-start; padding: 9px 10px; border: 0; border-radius: 9px; background: none; text-align: left; cursor: pointer; }
+.ex:hover, .ex:focus-visible { background: #ffffff0d; }
+.ex i { flex: none; width: 30px; height: 30px; border-radius: 8px; margin-top: 1px; box-shadow: inset 0 0 0 1px #ffffff1c; }
+.ex b { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-weight: 600; font-size: 14px; color: var(--ink); }
+.lvl { font: 600 10px/1 var(--f-mono); font-style: normal; letter-spacing: .06em; text-transform: uppercase; padding: 4px 6px 3px; border-radius: 6px; }
+.lvl-1 { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
+.lvl-2 { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+.lvl-3 { color: var(--hot); background: color-mix(in srgb, var(--hot) 16%, transparent); }
+.ex small { display: block; color: var(--ink-2); font-size: 12px; line-height: 1.35; margin-top: 2px; }
+#bp-form { display: flex; gap: 6px; padding: 6px; }
+#bp-form input { flex: 1; min-width: 0; height: 34px; padding: 0 10px; border-radius: 9px; border: 1px solid var(--rule); background: var(--well); color: var(--ink); font: inherit; }
+#bp-list { list-style: none; margin: 4px 0 0; padding: 0; }
+#bp-list li { display: flex; align-items: center; gap: 4px; padding: 2px 2px 2px 0; }
+#bp-list .load { flex: 1; min-width: 0; display: block; padding: 8px 10px; border: 0; border-radius: 8px; background: none; text-align: left; cursor: pointer; }
+#bp-list .load:hover { background: #ffffff0d; }
+#bp-list .load b { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#bp-list .load small { color: var(--ink-3); font: 11px var(--f-mono); }
+#bp-list .del { width: 30px; height: 30px; border: 0; border-radius: 8px; background: none; color: var(--ink-3); cursor: pointer; font-size: 18px; line-height: 1; }
+#bp-list .del:hover { color: var(--bad); background: #ffffff0d; }
+.pop-note { margin: 8px 10px 6px; color: var(--ink-3); font-size: 12px; }
+
+#toast {
+  position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 200; display: flex; align-items: center; gap: 12px;
+  padding: 8px 8px 8px 14px; border-radius: 12px; background: var(--ink); color: #141011; font-weight: 600; font-size: 13px; box-shadow: 0 10px 30px #000a; white-space: nowrap;
+}
+#toast[hidden] { display: none; }
+#toast button { height: 28px; padding: 0 10px; border-radius: 8px; border: 0; background: #1410111a; color: #141011; font-weight: 700; cursor: pointer; }
+#toast button:empty { display: none; }
+
+#modal { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 16px; background: #000a; }
+#modal[hidden] { display: none; }
+#modal form { width: min(400px, 100%); padding: 20px; border-radius: 16px; background: var(--desk-2); border: 1px solid var(--rule); box-shadow: 0 30px 80px #000c; }
+#modal p { margin: 0 0 14px; font-size: 14.5px; }
+#modal input { width: 100%; height: 38px; margin-bottom: 14px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--rule); background: var(--well); color: var(--ink); font: inherit; }
+#modal .row { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* Blockly, dressed for the desk */
+.blocklyToolboxDiv { padding: 8px 0 !important; border-right: 1px solid var(--rule); }
+.blocklyTreeRow { height: 36px !important; line-height: 36px !important; margin: 1px 8px 1px 0 !important; border-radius: 0 10px 10px 0; padding-right: 14px !important; }
+.blocklyTreeLabel { font: 600 13px var(--f-ui) !important; }
+.blocklyTreeRowContentContainer { display: flex; align-items: center; height: 100%; }
+.blocklyWidgetDiv .blocklyMenu, .blocklyDropDownDiv { font-family: var(--f-ui) !important; }
+.blocklyMainBackground { stroke: none !important; }
+.blocklyScrollbarHandle { rx: 4; ry: 4; }
+
+@media (max-width: 820px) {
+  body { overflow: auto; height: auto; }
+  #app { grid-template-columns: minmax(0, 1fr); grid-template-rows: 60vh auto; height: auto; }
+  #desk { height: 82vh; border-left: 0; border-top: 1px solid var(--rule); }
+  #btn-focus { display: none; }
+  .stage-head { top: 16px; left: 16px; }
+  .stage-tools { top: auto; bottom: 14px; right: 12px; }
+  .credit { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .status[data-state="running"] .dot { animation: none; }
+  * { transition: none !important; }
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <section id="stage" aria-label="Der Plantoid-Baum">
+    <canvas id="scene" aria-label="3D-Ansicht des Lichtbaums. Ziehen zum Umschauen, scrollen zum Zoomen. Fahr über einen Ast, um seine Pixelnummern zu sehen."></canvas>
+    <div id="labels" hidden></div>
+    <div id="marker" hidden></div>
+    <div id="probe" hidden></div>
+    <header class="stage-head">
+      <h1>Plantoid</h1>
+      <p class="spec"><span>22 Äste</span><span>476 Pixel</span><span>Rot Grün Blau Weiss</span></p>
+    </header>
+    <div class="stage-tools">
+      <button id="btn-numbers" class="chip" aria-pressed="false" title="Nummern der Äste zeigen (0 bis 21)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 4 8 20M16 4l-2 16M4.5 9h15M4 15h15"/></svg>Nummern</button>
+      <button id="btn-view" class="chip" title="Kamera wieder vor den Baum stellen">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3.5"/><path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4"/></svg>Ansicht zurücksetzen</button>
+      <button id="btn-focus" class="chip" aria-pressed="false" title="Programmierpult ausblenden">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>Nur Baum</button>
+    </div>
+    <p class="credit">Inoffizieller Software-Nachbau des Exponats <em>Plantoid</em> (11938) im Swiss Science Center Technorama, Winterthur. Idee und Realisation des Originals: Digital Winterthur und Technorama. Umsetzung Blockprogrammierung: smoca AG.</p>
+  </section>
+
+  <aside id="desk" aria-label="Programmierpult">
+    <div class="desk-bar">
+      <div class="tabs" role="tablist" aria-label="Programmansicht">
+        <button role="tab" id="tab-blocks" aria-selected="true">Blöcke</button>
+        <button role="tab" id="tab-code" aria-selected="false">Code</button>
+      </div>
+      <div class="bar-actions">
+        <div class="menu-wrap">
+          <button id="btn-examples" class="tool" aria-expanded="false" aria-haspopup="true" title="Fertige Programme zum Ausprobieren">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/><circle cx="12" cy="12" r="2.2"/></svg><span class="lbl-t">Beispiele</span></button>
+          <div id="menu-examples" class="pop" hidden><p class="pop-title">Probier ein Programm aus</p></div>
+        </div>
+        <div class="menu-wrap">
+          <button id="btn-backpack" class="tool" aria-expanded="false" aria-haspopup="true" title="Rucksack: deine gespeicherten Programme">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6.5V5a3 3 0 0 1 6 0v1.5"/><path d="M6 21h12a1 1 0 0 0 1-1v-9a4.5 4.5 0 0 0-4.5-4.5h-5A4.5 4.5 0 0 0 5 11v9a1 1 0 0 0 1 1z"/><path d="M8.5 21v-5.5h7V21M8.5 12h7"/></svg><span class="lbl-t">Rucksack</span><span class="count" id="bp-count"></span></button>
+          <div id="menu-backpack" class="pop" hidden>
+            <p class="pop-title">Rucksack</p>
+            <form id="bp-form" autocomplete="off"><input id="bp-name" maxlength="40" placeholder="Programm benennen" aria-label="Programmname"><button class="btn primary" type="submit">Speichern</button></form>
+            <ul id="bp-list"></ul>
+            <p class="pop-note" id="bp-note">Gespeicherte Programme bleiben in diesem Browser.</p>
+          </div>
+        </div>
+        <button id="btn-help" class="tool" title="So geht's">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.4a2.5 2.5 0 1 1 3.4 2.4c-.6.3-1 .8-1 1.5v.6"/><path d="M12 17.2v.1"/></svg><span class="lbl-t">Hilfe</span></button>
+        <button id="btn-broom" class="tool" title="Mit dem Besen alles wegwischen und neu anfangen">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 3.5 13 11"/><path d="M13.6 10.4c-2.6-1.2-5.3-.4-6.6 1.6L4 21c3.8.2 8.4-.9 10.3-3.4 1.3-1.8 1.2-4.6-.7-7.2z"/><path d="M8 21l3-5M11.6 20l1.6-3.4"/></svg><span class="lbl-t">Besen</span></button>
+      </div>
+    </div>
+
+    <div class="desk-body">
+      <div id="blockly"></div>
+      <div id="paused" hidden>
+        <div class="paused-card">
+          <h2>Du schreibst gerade Text-Code</h2>
+          <p>Der Baum macht jetzt, was im Tab «Code» steht. Gehst du zurück zu den Blöcken, ist dein Text weg.</p>
+          <button class="btn primary" id="btn-paused-back">Zurück zu den Blöcken</button>
+        </div>
+      </div>
+      <div id="help" hidden>
+        <div class="help-card" role="dialog" aria-modal="true" aria-labelledby="help-title">
+          <h2 id="help-title">So programmierst du den Baum</h2>
+          <ol class="steps">
+            <li><span class="step-ic" style="--c:#e2602b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.6 10.8c.7.6 1.1 1.3 1.1 2.2h5c0-.9.4-1.6 1.1-2.2A6 6 0 0 0 12 3z"/></svg></span>
+              <p><b>Gruppe wählen</b>Links sind die Gruppen: Licht, Farbe, Steuerung und mehr. Klick auf eine.</p></li>
+            <li><span class="step-ic" style="--c:#b8429a"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11.5V5a1.5 1.5 0 0 1 3 0v6"/><path d="M12 10.5V4a1.5 1.5 0 0 1 3 0v6.5"/><path d="M15 10.5V6.5a1.5 1.5 0 0 1 3 0V14a7 7 0 0 1-7 7h-.8a6 6 0 0 1-5-2.7l-1.6-2.5a1.5 1.5 0 0 1 2.5-1.7L9 15.5v-4"/></svg></span>
+              <p><b>Block hinziehen</b>Zieh einen Block nach rechts. Schau zum Baum: Er leuchtet sofort!</p></li>
+            <li><span class="step-ic" style="--c:#c98d14"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3.5a2 2 0 1 1 4 0H15v3.5a2 2 0 1 1 0 4V19H4z"/><path d="M15 11.5h1.5"/></svg></span>
+              <p><b>Blöcke stapeln</b>Häng Blöcke untereinander, wie bei einem Puzzle. So entsteht dein Programm.</p></li>
+            <li><span class="step-ic" style="--c:#21896a"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6.5V5a3 3 0 0 1 6 0v1.5"/><path d="M6 21h12a1 1 0 0 0 1-1v-9a4.5 4.5 0 0 0-4.5-4.5h-5A4.5 4.5 0 0 0 5 11v9a1 1 0 0 0 1 1z"/><path d="M8.5 21v-5.5h7V21M8.5 12h7"/></svg></span>
+              <p><b>Speichern oder neu anfangen</b>Der Rucksack speichert dein Programm. Der Besen wischt alles weg.</p></li>
+          </ol>
+          <p class="help-tip">Tipp: Fahr mit der Maus über den Baum. Dann siehst du die Nummer von jedem Pixel.</p>
+          <button class="btn primary big" id="btn-help-close">Los geht's!</button>
+        </div>
+      </div>
+      <div id="code-pane" hidden>
+        <div class="code-head">
+          <p id="code-note">So sieht dein Programm als Text-Code aus. So programmieren Profis.</p>
+          <button class="btn" id="btn-edit-text">Als Text bearbeiten</button>
+          <button class="btn" id="btn-back-blocks" hidden>Zurück zu den Blöcken</button>
+        </div>
+        <div class="editor">
+          <pre aria-hidden="true"><code id="code-hl"></code></pre>
+          <textarea id="code-text" spellcheck="false" autocapitalize="off" autocomplete="off" readonly aria-label="Programmcode"></textarea>
+        </div>
+        <details class="api">
+          <summary>Alle Text-Befehle (für Profis)</summary>
+          <dl>
+            <dt>Licht</dt><dd>fill(f) · setPixel(i, f) · setPixels(von, bis, f) · setStrip(s, f) · setStripPixel(s, k, f) · off() · fade(prozent) · brightness(prozent) · getPixel(i)</dd>
+            <dt>Farbe</dt><dd>hsv(farbton, sättigung, helligkeit) · rgbw(r, g, b, w) · rgb(r, g, b) · white(prozent) · randomColour() · blend(f1, f2, anteil) · dim(f, prozent) <i>— eine Farbe ist Text wie '#ff5a1f', oder '#ff5a1f80' mit Weiss-Kanal</i></dd>
+            <dt>Baum</dt><dd>PIXELS <i>476</i> · STRIPS <i>22</i> · stripLength(s) · stripStart(s) · stripOf(i) · heightOf(i) <i>0–100</i> · posOf(i) <i>0 Fuss … 100 Spitze</i> · xOf(i) <i>−100 links … 100 rechts</i></dd>
+            <dt>Zeit</dt><dd>await wait(sekunden) · await frame() · time() · start(async () => { … }) <i>läuft parallel</i></dd>
+          </dl>
+        </details>
+      </div>
+      <div id="toast" role="status" hidden><span id="toast-msg"></span><button id="toast-act"></button></div>
+    </div>
+
+    <div class="status" id="status" data-state="idle">
+      <span class="dot" aria-hidden="true"></span>
+      <span id="st-state">Startet</span>
+      <span id="st-time">0.0 s</span>
+      <span id="st-msg"></span>
+      <button id="btn-restart" class="tool" title="Programm von vorn starten">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v5h5"/></svg><span class="lbl-t">Neustart</span></button>
+      <button id="btn-run" class="tool" title="Programm anhalten">
+        <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg><span class="lbl-t">Stopp</span></button>
+    </div>
+  </aside>
+</div>
+
+<div id="modal" hidden>
+  <form id="modal-form">
+    <p id="modal-msg"></p>
+    <input id="modal-input" autocomplete="off" aria-label="Antwort">
+    <div class="row"><button type="button" class="btn" id="modal-cancel">Abbrechen</button><button type="submit" class="btn primary" id="modal-ok">OK</button></div>
+  </form>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/blockly/10.4.3/blockly_compressed.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/blockly/10.4.3/blocks_compressed.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/blockly/10.4.3/javascript_compressed.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/blockly/10.4.3/msg/de.js"></script>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { Reflector } from 'three/addons/objects/Reflector.js';
+
+/* =====================================================================
+   Facts from the exhibit sheet (Technorama 11938 "Plantoid"):
+   22 light strips numbered 0–21, 476 pixels numbered 0–475 across all strips,
+   each pixel a section of RGBW LEDs. Pixels run strip by strip, base to tip.
+   ===================================================================== */
+const N_STRIPS = 22, N_PIXELS = 476, TEX_W = 512;
+const $ = (id) => document.getElementById(id);
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { return false; } },
+};
+
+/* ---------------------------------------------------------------------
+   Tree shape. Bundles of strips that peel apart, like the sculpture:
+   n = strips in the bundle, dir = chord angle (deg from vertical, + is right),
+   end = tangent angle at the bundle's end, len = metres, dz = depth drift.
+   Child bundles take consecutive strips; lower numbers branch further left.
+   --------------------------------------------------------------------- */
+const Y0 = 0.62;        // top of the pedestal
+const SP = 0.034;       // strip pitch inside a bundle
+const SPEC = { n: 22, dir: 1, end: 0, len: 1.24, children: [
+  { n: 3, dir: -70, end: -60, len: 0.80, dz: -0.10, children: [
+    { n: 2, dir: -82, end: -64, len: 0.30 }, { n: 1, dir: -40, end: -20, len: 0.30 } ] },
+  { n: 16, dir: 0.5, end: 0, len: 0.24, children: [
+    { n: 3, dir: -48, end: -34, len: 0.76, dz: 0.05, children: [
+      { n: 2, dir: -60, end: -46, len: 0.34 }, { n: 1, dir: -20, end: -6, len: 0.36 } ] },
+    { n: 10, dir: -1, end: 0, len: 0.22, children: [
+      { n: 3, dir: -20, end: -10, len: 0.84, dz: -0.05, children: [
+        { n: 1, dir: -38, end: -28, len: 0.32 }, { n: 2, dir: -6, end: 2, len: 0.44 } ] },
+      { n: 4, dir: 3, end: 0, len: 0.76, dz: 0.03, children: [
+        { n: 2, dir: -10, end: -6, len: 0.46 }, { n: 2, dir: 22, end: 16, len: 0.40 } ] },
+      { n: 3, dir: 28, end: 18, len: 0.80, dz: 0.06, children: [
+        { n: 2, dir: 20, end: 8, len: 0.40 }, { n: 1, dir: 52, end: 40, len: 0.30 } ] },
+    ] },
+    { n: 3, dir: 52, end: 40, len: 0.78, dz: -0.04, children: [
+      { n: 2, dir: 44, end: 34, len: 0.36 }, { n: 1, dir: 78, end: 64, len: 0.30 } ] },
+  ] },
+  { n: 3, dir: 74, end: 84, len: 0.80, dz: -0.09, children: [
+    { n: 2, dir: 64, end: 50, len: 0.32 }, { n: 1, dir: 100, end: 94, len: 0.28 } ] },
+] };
+const TRUNK_TOP = Y0 + SPEC.len;
+
+const D2R = Math.PI / 180;
+const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const mul = (a, s) => [a[0] * s, a[1] * s, a[2] * s];
+const norm = (a) => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const smooth = (e0, e1, x) => { const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0))); return t * t * (3 - 2 * t); };
+const bezPt = (P, t) => { const u = 1 - t, a = u * u * u, b = 3 * u * u * t, c = 3 * u * t * t, d = t * t * t;
+  return [0, 1, 2].map((i) => a * P[0][i] + b * P[1][i] + c * P[2][i] + d * P[3][i]); };
+const bezTan = (P, t) => { const u = 1 - t, a = 3 * u * u, b = 6 * u * t, c = 3 * t * t;
+  return [0, 1, 2].map((i) => a * (P[1][i] - P[0][i]) + b * (P[2][i] - P[1][i]) + c * (P[3][i] - P[2][i])); };
+
+function buildTree() {
+  const routes = Array.from({ length: N_STRIPS }, () => []);
+  (function grow(node, first, P0, T0, trunk) {
+    const a = node.dir * D2R, e = (node.end ?? node.dir) * D2R, L = node.len;
+    const P3 = [P0[0] + Math.sin(a) * L, P0[1] + Math.cos(a) * L, P0[2] + (node.dz || 0)];
+    const Te = [Math.sin(e), Math.cos(e), 0];
+    const seg = { P: [P0, add(P0, mul(T0, L * 0.42)), sub(P3, mul(Te, L * 0.38)), P3], trunk };
+    const c = (node.n - 1) / 2;
+    for (let k = 0; k < node.n; k++) routes[first + k].push({ seg, off: k - c });
+    const side = [Te[1], -Te[0], 0];
+    let f = first;
+    for (const ch of node.children || []) {
+      grow(ch, f, add(P3, mul(side, ((f - first) + (ch.n - 1) / 2 - c) * SP)), Te, false);
+      f += ch.n;
+    }
+  })(SPEC, 0, [0, Y0 - 0.03, 0], [0, 1, 0], true);
+
+  const strips = routes.map((route, k) => {
+    const raw = [], pr = [];
+    route.forEach((r, si) => {
+      const P = r.seg.P;
+      for (let j = si ? 1 : 0; j <= 160; j++) {
+        const t = j / 160, p = bezPt(P, t), d = norm(bezTan(P, t)), sd = norm([d[1], -d[0], 0]);
+        const pitch = r.seg.trunk ? SP * (1 + 0.32 * (1 - t) ** 3) : SP;
+        raw.push([p[0] + sd[0] * r.off * pitch, p[1] + sd[1] * r.off * pitch, p[2]]);
+        pr.push(pitch);
+      }
+    });
+    // hand-bent waviness in the trunk and a convex front, as on the real sculpture
+    const u = (k - (N_STRIPS - 1) / 2) / (N_STRIPS / 2), bulge = 0.085 * (1 - u * u);
+    for (const p of raw) {
+      const tr = 1 - smooth(TRUNK_TOP - 0.15, TRUNK_TOP + 0.5, p[1]);
+      p[0] += 0.006 * Math.sin((p[1] - Y0) * 5.2 + k * 0.2) * tr;
+      p[2] += bulge * (0.45 + 0.55 * tr);
+    }
+    const cum = new Float64Array(raw.length);
+    for (let i = 1; i < raw.length; i++) cum[i] = cum[i - 1] + Math.hypot(raw[i][0] - raw[i - 1][0], raw[i][1] - raw[i - 1][1], raw[i][2] - raw[i - 1][2]);
+    const length = cum[raw.length - 1];
+    const m = Math.max(2, Math.ceil(length / 0.01) + 1), ds = length / (m - 1);
+    const P = new Float32Array(m * 3), W = new Float32Array(m);
+    for (let i = 0, j = 0; i < m; i++) {
+      const a = i * ds;
+      while (j < raw.length - 2 && cum[j + 1] < a) j++;
+      const f = Math.min(1, Math.max(0, (a - cum[j]) / ((cum[j + 1] - cum[j]) || 1)));
+      for (let q = 0; q < 3; q++) P[i * 3 + q] = raw[j][q] + (raw[j + 1][q] - raw[j][q]) * f;
+      W[i] = pr[j] + (pr[j + 1] - pr[j]) * f;
+    }
+    const T = new Float32Array(m * 3), S = new Float32Array(m * 3), N = new Float32Array(m * 3);
+    for (let i = 0; i < m; i++) {
+      const i0 = Math.max(0, i - 1), i1 = Math.min(m - 1, i + 1);
+      const t = norm([P[i1 * 3] - P[i0 * 3], P[i1 * 3 + 1] - P[i0 * 3 + 1], P[i1 * 3 + 2] - P[i0 * 3 + 2]]);
+      const s = norm([t[1], -t[0], 0]);
+      T.set(t, i * 3); S.set(s, i * 3); N.set(cross(s, t), i * 3);
+    }
+    return { index: k, length, m, ds, P, T, S, N, W, tipOff: route[route.length - 1].off };
+  });
+
+  // Pixels are equal-length sections: share 476 over the strips by length.
+  const total = strips.reduce((a, s) => a + s.length, 0);
+  const exact = strips.map((s) => (s.length / total) * N_PIXELS);
+  const counts = exact.map(Math.floor);
+  const rest = N_PIXELS - counts.reduce((a, b) => a + b, 0);
+  exact.map((x, i) => [x - counts[i], i]).sort((a, b) => b[0] - a[0]).slice(0, rest).forEach(([, i]) => counts[i]++);
+  let start = 0;
+  strips.forEach((s, i) => { s.count = counts[i]; s.start = start; start += s.count; });
+  return strips;
+}
+
+function frameAt(s, a) {
+  const ac = Math.min(s.length, Math.max(0, a));
+  const f = ac / s.ds, i = Math.min(s.m - 2, Math.floor(f)), w = f - i;
+  const L = (A) => [A[i * 3] + (A[i * 3 + 3] - A[i * 3]) * w, A[i * 3 + 1] + (A[i * 3 + 4] - A[i * 3 + 1]) * w, A[i * 3 + 2] + (A[i * 3 + 5] - A[i * 3 + 2]) * w];
+  const p = L(s.P), t = norm(L(s.T)), sd = norm(L(s.S)), n = norm(L(s.N));
+  const ext = a - ac;
+  if (ext) { p[0] += t[0] * ext; p[1] += t[1] * ext; p[2] += t[2] * ext; }
+  return { p, t, s: sd, n, w: s.W[i] + (s.W[i + 1] - s.W[i]) * w };
+}
+
+const strips = buildTree();
+const PX = {
+  strip: new Int16Array(N_PIXELS), local: new Int16Array(N_PIXELS), center: new Float32Array(N_PIXELS * 3),
+  height: new Float32Array(N_PIXELS), pos: new Float32Array(N_PIXELS), x: new Float32Array(N_PIXELS),
+};
+{
+  let minY = Infinity, maxY = -Infinity, maxX = 0;
+  for (const s of strips) for (let k = 0; k < s.count; k++) {
+    const i = s.start + k, F = frameAt(s, ((k + 0.5) * s.length) / s.count);
+    PX.strip[i] = s.index; PX.local[i] = k; PX.center.set(F.p, i * 3);
+    PX.pos[i] = Math.round(((k + 0.5) / s.count) * 1000) / 10;
+    minY = Math.min(minY, F.p[1]); maxY = Math.max(maxY, F.p[1]); maxX = Math.max(maxX, Math.abs(F.p[0]));
+  }
+  for (let i = 0; i < N_PIXELS; i++) {
+    PX.height[i] = Math.round(((PX.center[i * 3 + 1] - minY) / (maxY - minY)) * 1000) / 10;
+    PX.x[i] = Math.round((PX.center[i * 3] / maxX) * 1000) / 10;
+  }
+}
+
+/* =====================================================================
+   Pixel buffer: one RGBW byte quadruple per pixel, uploaded as a texture.
+   ===================================================================== */
+const buf = new Uint8Array(TEX_W * 4);
+let dirty = true, globalBright = 1;
+const HEX = Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, '0'));
+const b255 = (v) => { v = Math.round(Number(v)); return v > 255 ? 255 : v > 0 ? v : 0; };
+const hexOf = (r, g, b, w) => '#' + HEX[r] + HEX[g] + HEX[b] + (w ? HEX[w] : '');
+let lastStr = null, lastRGBW = [0, 0, 0, 0];
+function rgbwOf(c) {
+  if (typeof c === 'string') {
+    if (c === lastStr) return lastRGBW;
+    let h = c.trim(); if (h[0] === '#') h = h.slice(1);
+    if (/^[0-9a-f]{3}$/i.test(h)) h = h.replace(/./g, (x) => x + x);
+    if (!/^[0-9a-f]{6}([0-9a-f]{2})?$/i.test(h)) throw new Error(`«${c}» ist keine Farbe. Schreib zum Beispiel '#ff5a1f' oder hsv(20, 100, 100).`);
+    lastStr = c;
+    lastRGBW = [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16), h.length === 8 ? parseInt(h.slice(6, 8), 16) : 0];
+    return lastRGBW;
+  }
+  if (Array.isArray(c)) return [b255(c[0] || 0), b255(c[1] || 0), b255(c[2] || 0), b255(c[3] || 0)];
+  if (c == null) return [0, 0, 0, 0];
+  throw new Error(`${JSON.stringify(c)} ist keine Farbe. Schreib zum Beispiel '#ff5a1f' oder hsv(20, 100, 100).`);
+}
+const put = (i, c) => { const o = i * 4; buf[o] = c[0]; buf[o + 1] = c[1]; buf[o + 2] = c[2]; buf[o + 3] = c[3]; dirty = true; };
+
+const colourFns = {
+  rgb: (r, g, b) => hexOf(b255(r), b255(g), b255(b), 0),
+  rgbw: (r, g, b, w) => hexOf(b255(r), b255(g), b255(b), b255(w)),
+  hsv(h, s = 100, v = 100) {
+    h = (((Number(h) || 0) % 360) + 360) % 360;
+    s = Math.min(100, Math.max(0, Number(s) || 0)) / 100; v = Math.min(100, Math.max(0, Number(v) || 0)) / 100;
+    const c = v * s, x = c * (1 - Math.abs(((h / 60) % 2) - 1)), m = v - c;
+    const [r, g, b] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
+    return hexOf(b255((r + m) * 255), b255((g + m) * 255), b255((b + m) * 255), 0);
+  },
+  white: (p = 100) => '#000000' + HEX[b255((Number(p) || 0) * 2.55)],
+  randomColour: () => colourFns.hsv(Math.random() * 360, 75 + Math.random() * 25, 100),
+  blend(a, b, t = 0.5) {
+    const A = rgbwOf(a).slice(), B = rgbwOf(b); t = Math.min(1, Math.max(0, Number(t) || 0));
+    return hexOf(...A.map((v, i) => b255(v + (B[i] - v) * t)));
+  },
+  dim(c, p = 100) { const k = Math.max(0, Number(p) || 0) / 100; return hexOf(...rgbwOf(c).map((v) => b255(v * k))); },
+};
+
+/* =====================================================================
+   Program runtime. Programs are async JavaScript; waits resolve on the
+   animation clock, so a running program updates the tree frame by frame.
+   ===================================================================== */
+const STOP = Symbol('stop');
+const RT = { run: null, timers: [], budget: 0, seq: 0 };
+const API_KEYS = ['PIXELS', 'STRIPS', 'fill', 'setPixel', 'setPixels', 'setStrip', 'setStripPixel', 'off', 'fade', 'brightness', 'getPixel',
+  'stripLength', 'stripStart', 'stripOf', 'heightOf', 'posOf', 'xOf', 'rgb', 'rgbw', 'hsv', 'white', 'randomColour', 'blend', 'dim',
+  'wait', 'frame', 'time', 'start', '__trap'];
+
+function sleep(run, sec) {
+  return new Promise((res) => RT.timers.push({ at: performance.now() + sec * 1000, res, run }))
+    .then(() => { if (run.cancelled) throw STOP; });
+}
+
+function makeApi(run) {
+  const alive = () => { if (run.cancelled) throw STOP; };
+  const warn = (msg) => { if (!run.warned.has(msg)) { run.warned.add(msg); showWarning(msg); } };
+  const pix = (i) => {
+    const n = Math.round(Number(i));
+    if (!(n >= 0 && n < N_PIXELS)) { warn(`Pixel ${i} gibt es nicht. Die Pixel haben die Nummern 0 bis ${N_PIXELS - 1}.`); return -1; }
+    return n;
+  };
+  const strip = (s) => {
+    const n = Math.round(Number(s));
+    if (!(n >= 0 && n < N_STRIPS)) { warn(`Ast ${s} gibt es nicht. Die Äste haben die Nummern 0 bis ${N_STRIPS - 1}.`); return null; }
+    return strips[n];
+  };
+  return {
+    PIXELS: N_PIXELS, STRIPS: N_STRIPS,
+    fill(c) { alive(); const v = rgbwOf(c); for (let i = 0; i < N_PIXELS; i++) put(i, v); },
+    setPixel(i, c) { alive(); const n = pix(i); if (n >= 0) put(n, rgbwOf(c)); },
+    setPixels(a, b, c) {
+      alive(); const v = rgbwOf(c);
+      let lo = Math.round(Math.min(a, b)), hi = Math.round(Math.max(a, b));
+      if (lo < 0 || hi >= N_PIXELS) warn(`Die Pixel haben die Nummern 0 bis ${N_PIXELS - 1}. Die anderen von ${lo} bis ${hi} gibt es nicht.`);
+      lo = Math.max(0, lo); hi = Math.min(N_PIXELS - 1, hi);
+      for (let i = lo; i <= hi; i++) put(i, v);
+    },
+    setStrip(s, c) { alive(); const st = strip(s); if (!st) return; const v = rgbwOf(c); for (let k = 0; k < st.count; k++) put(st.start + k, v); },
+    setStripPixel(s, k, c) {
+      alive(); const st = strip(s); if (!st) return;
+      const n = Math.round(Number(k));
+      if (!(n >= 0 && n < st.count)) { warn(`Ast ${st.index} hat nur die Pixel Nr. 0 bis ${st.count - 1}. Nr. ${k} gibt es dort nicht.`); return; }
+      put(st.start + n, rgbwOf(c));
+    },
+    off() { alive(); buf.fill(0, 0, N_PIXELS * 4); dirty = true; },
+    fade(p) {
+      alive(); const k = 1 - Math.min(100, Math.max(0, Number(p) || 0)) / 100;
+      for (let j = 0; j < N_PIXELS * 4; j++) buf[j] = Math.floor(buf[j] * k);
+      dirty = true;
+    },
+    brightness(p) { alive(); globalBright = Math.min(100, Math.max(0, Number(p) || 0)) / 100; },
+    getPixel(i) { const n = pix(i); if (n < 0) return '#000000'; const o = n * 4; return hexOf(buf[o], buf[o + 1], buf[o + 2], buf[o + 3]); },
+    stripLength(s) { const st = strip(s); return st ? st.count : 0; },
+    stripStart(s) { const st = strip(s); return st ? st.start : 0; },
+    stripOf(i) { const n = pix(i); return n < 0 ? -1 : PX.strip[n]; },
+    heightOf(i) { const n = pix(i); return n < 0 ? 0 : PX.height[n]; },
+    posOf(i) { const n = pix(i); return n < 0 ? 0 : PX.pos[n]; },
+    xOf(i) { const n = pix(i); return n < 0 ? 0 : PX.x[n]; },
+    ...colourFns,
+    wait(sec) { alive(); return sleep(run, Math.max(0, Number(sec) || 0)); },
+    frame() { alive(); return sleep(run, 0); },
+    time() { return (performance.now() - run.t0) / 1000; },
+    start(fn) { alive(); run.threads.push(Promise.resolve().then(fn).catch(run.fail)); },
+    __trap() { alive(); if (++RT.budget > 30000) return sleep(run, 0); },
+  };
+}
+
+function compile(code) {
+  const body = `"use strict";\nreturn (async () => {\n${code}\n})();`;
+  try { return new Function(...API_KEYS, body); }
+  catch (e) { if (e instanceof SyntaxError) throw e; return compileViaScript(body); }
+}
+function compileViaScript(body) {
+  // Fallback for pages whose security policy forbids new Function(): an inline script.
+  window.__plantoidFn = null; let err = null;
+  const onErr = (ev) => { err = ev.error || new SyntaxError(ev.message); ev.preventDefault(); };
+  window.addEventListener('error', onErr);
+  const s = document.createElement('script');
+  const nonce = document.querySelector('script[nonce]')?.nonce; if (nonce) s.nonce = nonce;
+  s.textContent = `window.__plantoidFn = function(${API_KEYS.join(',')}) {${body}\n};`;
+  document.head.appendChild(s); s.remove();
+  window.removeEventListener('error', onErr);
+  if (err) throw err;
+  if (!window.__plantoidFn) throw new Error('Dieser Browser lässt das Programm nicht laufen.');
+  return window.__plantoidFn;
+}
+const friendly = (e) => {
+  if (!e || !e.message) return String(e);
+  const m = e.message; let r;
+  if ((r = /^(.+) is not defined$/.exec(m))) return `«${r[1]}» kenne ich nicht. Ist es vielleicht falsch geschrieben?`;
+  if ((r = /^(.+) is not a function$/.exec(m))) return `«${r[1]}» ist kein Befehl.`;
+  if (e.name === 'SyntaxError') return `Da stimmt etwas mit dem Text nicht: ${m}`;
+  return (e.name && e.name !== 'Error' ? `${e.name}: ` : '') + m;
+};
+
+function stopProgram(state = 'stopped') {
+  if (RT.run) { RT.run.cancelled = true; RT.run = null; }
+  RT.timers = [];
+  if (state) setStatus(state);
+}
+
+async function runProgram(code) {
+  stopProgram(null);
+  buf.fill(0); dirty = true; globalBright = 1;
+  const run = { id: ++RT.seq, cancelled: false, t0: performance.now(), threads: [], warned: new Set() };
+  run.fail = (e) => { if (e === STOP || run.cancelled) return; run.cancelled = true; if (RT.run === run) RT.run = null; setStatus('error', friendly(e)); };
+  if (!code.trim()) { setStatus('empty'); return; }
+  let fn;
+  try { fn = compile(code); } catch (e) { setStatus('error', friendly(e)); return; }
+  RT.run = run;
+  setStatus('running');
+  const api = makeApi(run);
+  run.threads.push(Promise.resolve().then(() => fn(...API_KEYS.map((k) => api[k]))).catch(run.fail));
+  for (let i = 0; i < run.threads.length; i++) await run.threads[i];
+  if (!run.cancelled && RT.run === run) { RT.run = null; setStatus('finished'); }
+}
+
+/* =====================================================================
+   3D scene
+   ===================================================================== */
+const canvas = $('scene'), stage = $('stage');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+const HALL = 0x070606;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(HALL);
+scene.fog = new THREE.FogExp2(HALL, 0.075);
+
+const camera = new THREE.PerspectiveCamera(34, 1, 0.05, 80);
+const TARGET = new THREE.Vector3(0, 2.05, 0);
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true; controls.dampingFactor = 0.08;
+controls.minDistance = 2.2; controls.maxDistance = 13;
+controls.minPolarAngle = 0.35; controls.maxPolarAngle = 1.66;
+controls.screenSpacePanning = true;
+
+const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+const composer = new EffectComposer(renderer, rt);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.62, 0.38, 0.22);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+// Pixel texture and the neon-flex shader
+const pixTex = new THREE.DataTexture(buf, TEX_W, 1, THREE.RGBAFormat, THREE.UnsignedByteType);
+pixTex.magFilter = pixTex.minFilter = THREE.NearestFilter;
+pixTex.needsUpdate = true;
+
+const stripMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uPix: { value: pixTex }, uTexW: { value: TEX_W }, uGain: { value: 1.3 }, uBright: { value: 1 },
+    uWhite: { value: new THREE.Vector3(1.0, 0.8, 0.58) }, uHover: { value: -1 }, uHoverStrip: { value: -1 }, uTime: { value: 0 },
+  },
+  vertexShader: /* glsl */`
+    attribute float aPixel; attribute float aSeg; attribute float aStrip;
+    uniform sampler2D uPix; uniform float uTexW; uniform float uHover; uniform float uHoverStrip;
+    varying vec4 vC; varying float vSeg; varying vec3 vN; varying vec3 vV; varying float vHi;
+    void main() {
+      vC = texture2D(uPix, vec2((aPixel + 0.5) / uTexW, 0.5));
+      vSeg = aSeg;
+      vHi = max(1.0 - step(0.5, abs(aPixel - uHover)), 0.55 * (1.0 - step(0.5, abs(aStrip - uHoverStrip))));
+      vec4 mv = modelViewMatrix * vec4(position, 1.0);
+      vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz);
+      gl_Position = projectionMatrix * mv;
+    }`,
+  fragmentShader: /* glsl */`
+    uniform float uGain; uniform float uBright; uniform vec3 uWhite; uniform float uTime;
+    varying vec4 vC; varying float vSeg; varying vec3 vN; varying vec3 vV; varying float vHi;
+    void main() {
+      float f = clamp(dot(normalize(vN), normalize(vV)), 0.0, 1.0);
+      vec3 lin = pow(vC.rgb, vec3(2.2)) + uWhite * pow(vC.a, 2.2);
+      float edge = smoothstep(0.0, 0.1, vSeg) * smoothstep(1.0, 0.9, vSeg);
+      float chips = 0.94 + 0.06 * cos(vSeg * 6.2831853 * 6.0);
+      vec3 e = lin * uGain * uBright * mix(0.55, 1.0, edge) * chips * (0.3 + 0.95 * pow(f, 1.3));
+      float pk = max(e.r, max(e.g, e.b));
+      e += vec3(pk) * pow(f, 5.0) * 0.12;
+      vec3 silicone = vec3(0.032, 0.03, 0.028) * (0.35 + 0.65 * f);
+      vec3 hi = vec3(0.6) * vHi * (0.65 + 0.35 * sin(uTime * 7.0));
+      gl_FragColor = vec4(silicone + e + hi, 1.0);
+    }`,
+});
+
+function buildStripGeometry() {
+  const RS = 10, HW = 0.0088, HD = 0.0068;
+  const pos = [], nor = [], aPix = [], aSeg = [], aStrip = [], idx = [];
+  const ring = Array.from({ length: RS }, (_, q) => [Math.cos((q / RS) * Math.PI * 2), Math.sin((q / RS) * Math.PI * 2)]);
+  let v = 0;
+  for (const s of strips) {
+    const segLen = s.length / s.count;
+    for (let k = 0; k < s.count; k++) {
+      const nR = Math.max(3, Math.ceil(segLen / 0.012)), base = v;
+      for (let r = 0; r <= nR; r++) {
+        const F = frameAt(s, segLen * (k + r / nR));
+        for (const [c, sn] of ring) {
+          pos.push(F.p[0] + F.s[0] * c * HW + F.n[0] * sn * HD, F.p[1] + F.s[1] * c * HW + F.n[1] * sn * HD, F.p[2] + F.s[2] * c * HW + F.n[2] * sn * HD);
+          const nn = norm([F.s[0] * c / HW + F.n[0] * sn / HD, F.s[1] * c / HW + F.n[1] * sn / HD, F.s[2] * c / HW + F.n[2] * sn / HD]);
+          nor.push(...nn); aPix.push(s.start + k); aSeg.push(r / nR); aStrip.push(s.index); v++;
+        }
+      }
+      for (let r = 0; r < nR; r++) for (let q = 0; q < RS; q++) {
+        const a = base + r * RS + q, b = base + r * RS + ((q + 1) % RS), c = a + RS, d = b + RS;
+        idx.push(a, c, b, b, c, d);
+      }
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('aPixel', new THREE.Float32BufferAttribute(aPix, 1));
+  g.setAttribute('aSeg', new THREE.Float32BufferAttribute(aSeg, 1));
+  g.setAttribute('aStrip', new THREE.Float32BufferAttribute(aStrip, 1));
+  g.setIndex(idx);
+  return g;
+}
+
+// The black body: one deep channel behind each strip; neighbours merge into branches.
+function buildBodyGeometry() {
+  const DEPTH = 0.12, FRONT = 0.006;
+  const pos = [], nor = [], idx = [];
+  let v = 0;
+  const quad = (a, b, c, d, n) => { pos.push(...a, ...b, ...c, ...d); for (let i = 0; i < 4; i++) nor.push(...n); idx.push(v, v + 1, v + 2, v, v + 2, v + 3); v += 4; };
+  for (const s of strips) {
+    const from = -0.05, to = s.length + 0.035, steps = Math.ceil((to - from) / 0.02);
+    let prev = null;
+    for (let j = 0; j <= steps; j++) {
+      const F = frameAt(s, from + ((to - from) * j) / steps);
+      const hw = F.w / 2 + 0.0003;
+      const fc = sub(F.p, mul(F.n, FRONT)), bc = sub(fc, mul(F.n, DEPTH));
+      const cur = { FL: sub(fc, mul(F.s, hw)), FR: add(fc, mul(F.s, hw)), BL: sub(bc, mul(F.s, hw)), BR: add(bc, mul(F.s, hw)), F };
+      if (prev) {
+        const n = norm(add(prev.F.n, F.n)), sd = norm(add(prev.F.s, F.s));
+        quad(prev.FL, prev.FR, cur.FR, cur.FL, n);
+        quad(prev.BR, prev.BL, cur.BL, cur.BR, mul(n, -1));
+        quad(prev.BL, prev.FL, cur.FL, cur.BL, mul(sd, -1));
+        quad(prev.FR, prev.BR, cur.BR, cur.FR, sd);
+      }
+      prev = cur;
+    }
+    quad(prev.FL, prev.BL, prev.BR, prev.FR, prev.F.t);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setIndex(idx);
+  return g;
+}
+
+const tree = new THREE.Group();
+tree.add(new THREE.Mesh(buildStripGeometry(), stripMat));
+tree.add(new THREE.Mesh(buildBodyGeometry(), new THREE.MeshStandardMaterial({ color: 0x141212, roughness: 0.55, metalness: 0.1, side: THREE.DoubleSide })));
+scene.add(tree);
+
+// Pedestal: a black drum with a softened top edge
+{
+  const R = 0.95, r = 0.035, prof = [new THREE.Vector2(0, Y0)];
+  for (let i = 0; i <= 10; i++) { const a = (i / 10) * Math.PI / 2; prof.push(new THREE.Vector2(R - r + Math.sin(a) * r, Y0 - r + Math.cos(a) * r)); }
+  prof.push(new THREE.Vector2(R, 0.03), new THREE.Vector2(R - 0.03, 0.03), new THREE.Vector2(R - 0.03, 0));
+  const drum = new THREE.Mesh(new THREE.LatheGeometry(prof, 128), new THREE.MeshStandardMaterial({ color: 0x221e1d, roughness: 0.45, metalness: 0.05 }));
+  scene.add(drum);
+  const lid = new THREE.Mesh(new THREE.CircleGeometry(R - r, 96), new THREE.MeshStandardMaterial({ color: 0x2c2726, roughness: 0.28, metalness: 0.1 }));
+  lid.rotation.x = -Math.PI / 2; lid.position.y = Y0 + 0.001;
+  scene.add(lid);
+  // a dim hall spot so the drum reads as an object even when the tree is dark
+  const spot = new THREE.SpotLight(0xffe6d6, 55, 0, 0.36, 0.85, 2);
+  spot.position.set(0.6, 4.6, 4.2); spot.target.position.set(0, 0.35, 0);
+  scene.add(spot, spot.target);
+}
+
+// Polished hall floor: a soft mirror under a dark, light-catching coat
+const mirror = new Reflector(new THREE.CircleGeometry(30, 72), { textureWidth: 512, textureHeight: 512, color: 0xb4b0b0, clipBias: 0.003 });
+mirror.rotation.x = -Math.PI / 2;
+scene.add(mirror);
+const floor = new THREE.Mesh(new THREE.CircleGeometry(30, 72), new THREE.MeshStandardMaterial({ color: 0x0d0c0c, roughness: 0.82, metalness: 0, transparent: true, opacity: 0.93 }));
+floor.rotation.x = -Math.PI / 2; floor.position.y = 0.002;
+scene.add(floor);
+
+scene.add(new THREE.HemisphereLight(0x3a3432, 0x050404, 0.5));
+const rim = new THREE.DirectionalLight(0x8090b0, 0.35); rim.position.set(-3, 6, -5); scene.add(rim);
+const key = new THREE.DirectionalLight(0xffeedd, 0.12); key.position.set(4, 5, 6); scene.add(key);
+
+// Spill: the tree lights its surroundings with its own current colours
+const SPILL = [[0, 0.95, 0.55], [0, 1.85, 0.85], [-0.95, 2.5, 0.8], [0.95, 2.5, 0.8], [0, 3.25, 0.75]].map(([x, y, z]) => {
+  const l = new THREE.PointLight(0xffffff, 0, 0, 2); l.position.set(x, y, z); scene.add(l);
+  const w = new Float32Array(N_PIXELS); let sum = 0;
+  for (let i = 0; i < N_PIXELS; i++) {
+    const dx = PX.center[i * 3] - x, dy = PX.center[i * 3 + 1] - y;
+    w[i] = Math.exp(-(dx * dx + dy * dy) / 0.35); sum += w[i];
+  }
+  for (let i = 0; i < N_PIXELS; i++) w[i] /= sum;
+  return { l, w };
+});
+const LIN = Float32Array.from({ length: 256 }, (_, i) => Math.pow(i / 255, 2.2));
+const WHITE = [1.0, 0.8, 0.58];
+const avg = [0, 0, 0];
+
+function updateSpill() {
+  for (const { l, w } of SPILL) {
+    let r = 0, g = 0, b = 0;
+    for (let i = 0; i < N_PIXELS; i++) {
+      const o = i * 4, k = w[i], wl = LIN[buf[o + 3]];
+      r += k * (LIN[buf[o]] + wl * WHITE[0]); g += k * (LIN[buf[o + 1]] + wl * WHITE[1]); b += k * (LIN[buf[o + 2]] + wl * WHITE[2]);
+    }
+    const m = Math.max(r, g, b);
+    if (m > 1e-4) l.color.setRGB(r / m, g / m, b / m, THREE.LinearSRGBColorSpace);
+    l.intensity = m * (l.position.z > 0.7 ? 16 : 9) * globalBright;
+  }
+}
+
+/* ---------- camera fitting & resizing ---------- */
+let userMoved = false;
+function fitView() {
+  const a = camera.aspect, tv = Math.tan((camera.fov / 2) * D2R);
+  const d = Math.max(2.2 / tv, 1.75 / (tv * a)) * 1.08;
+  const dir = new THREE.Vector3(0.03, -0.045, 1).normalize();
+  camera.position.copy(TARGET).addScaledVector(dir, d);
+  controls.target.copy(TARGET);
+  controls.update();
+  userMoved = false;
+}
+function resize() {
+  const w = Math.max(1, stage.clientWidth), h = Math.max(1, stage.clientHeight);
+  renderer.setSize(w, h, false);
+  composer.setSize(w, h);
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+  const pr = renderer.getPixelRatio();
+  mirror.getRenderTarget().setSize(Math.round(w * pr * 0.5), Math.round(h * pr * 0.5));
+  if (!userMoved) fitView();
+}
+new ResizeObserver(resize).observe(stage);
+
+let lastInteract = performance.now(), dragging = false;
+controls.addEventListener('start', () => { dragging = true; userMoved = true; lastInteract = performance.now(); });
+controls.addEventListener('end', () => { dragging = false; lastInteract = performance.now(); });
+
+/* ---------- hover probe & strip numbers ---------- */
+const probe = $('probe'), marker = $('marker'), labelsEl = $('labels');
+let pointer = null, hoverPixel = -1, showNumbers = false;
+canvas.addEventListener('pointermove', (e) => { const r = canvas.getBoundingClientRect(); pointer = { x: e.clientX - r.left, y: e.clientY - r.top }; });
+canvas.addEventListener('pointerleave', () => { pointer = null; });
+const tmpV = new THREE.Vector3();
+const project = (x, y, z) => { tmpV.set(x, y, z).project(camera); return [(tmpV.x + 1) / 2 * stage.clientWidth, (1 - tmpV.y) / 2 * stage.clientHeight, tmpV.z]; };
+
+const labelEls = strips.map((s) => {
+  const el = document.createElement('span');
+  el.className = 'lbl'; el.textContent = s.index;
+  el.title = `Ast ${s.index}: Pixel ${s.start} bis ${s.start + s.count - 1}`;
+  el.addEventListener('pointerenter', () => { stripMat.uniforms.uHoverStrip.value = s.index; });
+  el.addEventListener('pointerleave', () => { stripMat.uniforms.uHoverStrip.value = -1; });
+  labelsEl.appendChild(el);
+  const F = frameAt(s, s.length + 0.08);
+  return { el, at: add(F.p, mul(F.s, s.tipOff * 0.17)) };
+});
+
+function updateOverlays() {
+  if (showNumbers) for (const { el, at } of labelEls) {
+    const [x, y] = project(at[0], at[1], at[2]);
+    el.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
+  }
+  let best = -1, bd = 18 * 18;
+  if (pointer && !dragging) {
+    for (let i = 0; i < N_PIXELS; i++) {
+      const [x, y, z] = project(PX.center[i * 3], PX.center[i * 3 + 1], PX.center[i * 3 + 2]);
+      const d = (x - pointer.x) ** 2 + (y - pointer.y) ** 2;
+      if (d < bd && z < 1) { bd = d; best = i; }
+    }
+  }
+  if (best !== hoverPixel) {
+    hoverPixel = best;
+    stripMat.uniforms.uHover.value = best;
+    probe.hidden = marker.hidden = best < 0;
+  }
+  if (best >= 0) {
+    const [x, y] = project(PX.center[best * 3], PX.center[best * 3 + 1], PX.center[best * 3 + 2]);
+    marker.style.transform = `translate(${x}px, ${y}px)`;
+    const o = best * 4, hex = hexOf(buf[o], buf[o + 1], buf[o + 2], buf[o + 3]), s = strips[PX.strip[best]];
+    probe.innerHTML = `<b>Pixel ${best}</b><br>Ast ${s.index}, dort Nr. ${PX.local[best]}<br>Höhe ${PX.height[best].toFixed(0)} · links/rechts ${PX.x[best].toFixed(0)}<br><span class="sw" style="background:#${HEX[buf[o]]}${HEX[buf[o + 1]]}${HEX[buf[o + 2]]}"></span>${hex}`;
+    const w = stage.clientWidth, px = x + 18 + 170 > w ? x - 18 - probe.offsetWidth : x + 18;
+    probe.style.transform = `translate(${px}px, ${Math.max(8, y - 40)}px)`;
+  }
+}
+
+/* ---------- frame loop ---------- */
+// Timers resolve in their own rAF callback, before the render callback, so a
+// program's pixel changes land in the same frame its wait() finished.
+function schedulerTick() {
+  requestAnimationFrame(schedulerTick);
+  requestAnimationFrame(renderTick);
+  RT.budget = 0;
+  if (!RT.timers.length) return;
+  const now = performance.now(), due = [];
+  RT.timers = RT.timers.filter((t) => (t.run.cancelled ? false : t.at <= now + 1 ? (due.push(t), false) : true));
+  for (const t of due) t.res();
+}
+let frameNo = 0, swayPrev = 0;
+const rootStyle = document.documentElement.style;
+function renderTick(ts) {
+  frameNo++;
+  if (dirty) { pixTex.needsUpdate = true; dirty = false; }
+  stripMat.uniforms.uBright.value = globalBright;
+  stripMat.uniforms.uTime.value = ts / 1000;
+  updateSpill();
+
+  // gentle idle drift so the tree feels present
+  const idle = (performance.now() - lastInteract) / 1000 - 12;
+  if (!reduceMotion && idle > 0 && !dragging && !pointer) {
+    const sway = 0.2 * Math.sin(idle * 0.12);
+    const off = camera.position.clone().sub(controls.target);
+    off.applyAxisAngle(new THREE.Vector3(0, 1, 0), sway - swayPrev);
+    camera.position.copy(controls.target).add(off);
+    swayPrev = sway;
+  } else if (idle <= 0) swayPrev = 0;
+  controls.update();
+  composer.render();
+  updateOverlays();
+
+  if (frameNo % 6 === 0) {
+    let r = 0, g = 0, b = 0;
+    for (const { w } of SPILL.slice(1, 5)) for (let i = 0; i < N_PIXELS; i += 3) {
+      const o = i * 4, wl = LIN[buf[o + 3]];
+      r += LIN[buf[o]] + wl; g += LIN[buf[o + 1]] + wl * 0.8; b += LIN[buf[o + 2]] + wl * 0.6;
+    }
+    const m = Math.max(r, g, b);
+    const c = m < 1 ? [170, 150, 140] : [r, g, b].map((v) => Math.round(110 + 145 * Math.pow(v / m, 0.6)));
+    rootStyle.setProperty('--live', `rgb(${c.join(',')})`);
+  }
+  if (frameNo % 6 === 3 && RT.run) $('st-time').textContent = `${((performance.now() - RT.run.t0) / 1000).toFixed(1)} s`;
+}
+requestAnimationFrame(schedulerTick);
+resize();
+
+/* =====================================================================
+   Status bar
+   ===================================================================== */
+const statusEl = $('status');
+const STATE_TEXT = { idle: 'Bereit', running: 'Läuft', finished: 'Fertig', stopped: 'Angehalten', error: 'Fehler', empty: 'Leer' };
+function setStatus(state, msg = '') {
+  statusEl.dataset.state = state;
+  $('st-state').textContent = STATE_TEXT[state] || state;
+  const m = $('st-msg');
+  m.classList.remove('warn');
+  m.textContent = msg || (state === 'empty' ? 'Zieh einen Block von links hierher.' : state === 'finished' ? 'Das Programm ist zu Ende. Der Baum bleibt so.' : '');
+  m.title = m.textContent;
+  const running = state === 'running';
+  const btn = $('btn-run');
+  btn.title = running ? 'Programm anhalten' : 'Programm starten';
+  btn.innerHTML = running
+    ? '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg><span class="lbl-t">Stopp</span>'
+    : '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg><span class="lbl-t">Start</span>';
+  if (!running && state !== 'error') $('st-time').textContent = state === 'empty' ? '' : $('st-time').textContent;
+}
+function showWarning(msg) { const m = $('st-msg'); m.textContent = msg; m.title = msg; m.classList.add('warn'); }
+
+/* =====================================================================
+   Blocks
+   ===================================================================== */
+const G = javascript.javascriptGenerator, O = javascript.Order;
+for (const k in Blockly.Msg) if (typeof Blockly.Msg[k] === 'string') Blockly.Msg[k] = Blockly.Msg[k].replace(/ß/g, 'ss');
+
+// Simple line icons for blocks, categories and the help card
+const ICONS = {
+  bulb: '<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.6 10.8c.7.6 1.1 1.3 1.1 2.2h5c0-.9.4-1.6 1.1-2.2A6 6 0 0 0 12 3z"/>',
+  tree: '<path d="M12 21V6M12 15l-4.5-4.5M12 12.5l4.5-4.5M7.5 10.5 5 8M16.5 8 19 5.5M12 8.5 9.5 6M12 7.5l2-2"/>',
+  dot: '<circle cx="12" cy="12" r="3.5"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21"/>',
+  dots: '<circle cx="5" cy="12" r="2.2"/><circle cx="12" cy="12" r="2.2"/><circle cx="19" cy="12" r="2.2"/>',
+  branch: '<path d="M7 21c0-5 1-8 4-10.5S17 6 18 3"/><path d="M10.6 10.8 5.5 8.5"/>',
+  pin: '<path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/>',
+  power: '<path d="M12 3v8"/><path d="M6.4 7.4a8 8 0 1 0 11.2 0"/>',
+  moon: '<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6 6 6M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"/>',
+  eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
+  hash: '<path d="M10 4 8 20M16 4l-2 16M4.5 9h15M4 15h15"/>',
+  palette: '<path d="M12 3a9 9 0 1 0 0 18c1.2 0 1.6-.8 1.6-1.6 0-.9-.7-1.3-.7-2.2 0-1 .8-1.6 1.7-1.6H17a4 4 0 0 0 4-4C21 6.6 17 3 12 3z"/><circle cx="7.5" cy="11.5" r="1.2"/><circle cx="10.5" cy="7.5" r="1.2"/><circle cx="15.5" cy="8" r="1.2"/>',
+  rainbow: '<path d="M2.5 18a9.5 9.5 0 0 1 19 0"/><path d="M6.5 18a5.5 5.5 0 0 1 11 0"/><path d="M10.5 18a1.5 1.5 0 0 1 3 0"/>',
+  mix: '<circle cx="9" cy="9" r="5"/><circle cx="15" cy="9" r="5"/><circle cx="12" cy="15" r="5"/>',
+  dim: '<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" fill="#fff"/>',
+  repeat: '<path d="M17 2.5 20.5 6 17 9.5"/><path d="M3.5 11.5V10A4 4 0 0 1 7.5 6h13"/><path d="M7 21.5 3.5 18 7 14.5"/><path d="M20.5 12.5V14a4 4 0 0 1-4 4h-13"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>',
+  stopwatch: '<circle cx="12" cy="13.5" r="7.5"/><path d="M12 9.5v4l2.5 1.5M9.5 2.5h5M12 2.5V6"/>',
+  fork: '<path d="M12 21v-6M12 15 6 9V3.5M12 15l6-6V3.5"/>',
+  math: '<path d="M7 3.5v7M3.5 7h7M14 7h7M4.5 14.5l5 5M9.5 14.5l-5 5M14 15.5h7M14 18.5h7"/>',
+  box: '<path d="M3.5 7.5 12 3.5l8.5 4-8.5 4z"/><path d="M3.5 7.5v9l8.5 4 8.5-4v-9"/><path d="M12 11.5v9"/>',
+};
+const svgIcon = (name, stroke = '#fff') => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`;
+const iconUri = (name) => 'data:image/svg+xml,' + encodeURIComponent(svgIcon(name));
+{
+  const cats = { light: ['bulb', '#e2602b'], colour: ['palette', '#b8429a'], control: ['repeat', '#c98d14'], logic: ['fork', '#3b6fd0'], math: ['math', '#21896a'], variable: ['box', '#7651c2'] };
+  const css = Object.entries(cats).map(([k, [ic, col]]) => {
+    const u = `url("${iconUri(ic)}")`;
+    return `.cat-${k}{-webkit-mask:${u} center/contain no-repeat;mask:${u} center/contain no-repeat;background:${col}}`;
+  }).join('');
+  const st = document.createElement('style');
+  st.textContent = `.catIcon{display:inline-block;flex:none;width:20px;height:20px;margin:0 9px 0 4px}.blocklyTreeSelected .catIcon{background:#fff!important}${css}`;
+  document.head.appendChild(st);
+}
+// Blockly's own blocks, in the words a child would use
+Object.assign(Blockly.Msg, {
+  CONTROLS_IF_MSG_IF: 'wenn', CONTROLS_IF_MSG_THEN: 'dann', CONTROLS_IF_MSG_ELSE: 'sonst', CONTROLS_IF_MSG_ELSEIF: 'sonst wenn',
+  CONTROLS_REPEAT_TITLE: 'wiederhole %1 mal',
+  CONTROLS_FOR_TITLE: 'zähle %1 von %2 bis %3 in %4er-Schritten',
+  MATH_RANDOM_INT_TITLE: 'Zufallszahl von %1 bis %2',
+  MATH_RANDOM_FLOAT_TITLE_RANDOM: 'Zufallszahl zwischen 0 und 1',
+  COLOUR_RANDOM_TITLE: 'Zufallsfarbe',
+  COLOUR_BLEND_TITLE: 'mische', COLOUR_BLEND_COLOUR1: 'Farbe', COLOUR_BLEND_COLOUR2: 'mit Farbe', COLOUR_BLEND_RATIO: 'Anteil (0 bis 1)',
+  NEW_VARIABLE: 'Neue Variable machen …', NEW_VARIABLE_TITLE: 'Wie soll die neue Variable heissen?',
+});
+if (Blockly.FieldColour) {
+  Blockly.FieldColour.COLOURS = ['#ff0000', '#ff4a00', '#ff8a00', '#ffc800', '#ffff00', '#8cff00', '#00ff3c', '#00ffb4',
+    '#00e6ff', '#0090ff', '#0028ff', '#7a00ff', '#ff00ff', '#ff0078', '#ffffff', '#ff5a1f', '#ffb27a', '#7dffd4', '#9fa8ff', '#000000'];
+  Blockly.FieldColour.TITLES = [];
+  Blockly.FieldColour.COLUMNS = 5;
+}
+
+const style = (p, s, t) => ({ colourPrimary: p, colourSecondary: s, colourTertiary: t });
+const theme = Blockly.Theme.defineTheme('plantoid', {
+  base: Blockly.Themes.Classic,
+  blockStyles: {
+    light_blocks: style('#e2602b', '#f08356', '#b0441a'),
+    colour_blocks: style('#b8429a', '#cd6bb4', '#8a2c72'),
+    loop_blocks: style('#c98d14', '#dba942', '#966706'),
+    logic_blocks: style('#3b6fd0', '#6790df', '#28509c'),
+    math_blocks: style('#21896a', '#4ea98d', '#14654d'),
+    variable_blocks: style('#7651c2', '#957ad3', '#563895'),
+  },
+  categoryStyles: {
+    light_category: { colour: '#e2602b' }, colour_category: { colour: '#b8429a' }, control_category: { colour: '#c98d14' },
+    logic_category: { colour: '#3b6fd0' }, math_category: { colour: '#21896a' }, variable_category: { colour: '#7651c2' },
+  },
+  componentStyles: {
+    workspaceBackgroundColour: '#141112', toolboxBackgroundColour: '#100e0f', toolboxForegroundColour: '#ece4df',
+    flyoutBackgroundColour: '#1d191a', flyoutForegroundColour: '#ece4df', flyoutOpacity: 0.97,
+    scrollbarColour: '#51474a', scrollbarOpacity: 0.55, insertionMarkerColour: '#ffffff', insertionMarkerOpacity: 0.3,
+    markerColour: '#ffffff', cursorColour: '#ffffff',
+  },
+  fontStyle: { family: '"Instrument Sans", system-ui, sans-serif', weight: '600', size: 13 },
+});
+
+const num = { type: 'input_value', check: 'Number' };
+const colour = { type: 'input_value', check: 'Colour' };
+const stmt = { previousStatement: null, nextStatement: null, inputsInline: true };
+// Puts a small white icon in front of a block's text.
+const kid = (icon, def) => ({ ...def, message0: '%1 ' + def.message0.replace(/%(\d+)/g, (_, n) => '%' + (Number(n) + 1)), args0: [{ type: 'field_image', src: iconUri(icon), width: 18, height: 18, alt: '' }, ...(def.args0 || [])] });
+Blockly.common.defineBlocksWithJsonArray([
+  kid('tree', { type: 'light_fill', message0: 'färbe alle Pixel %1', args0: [{ ...colour, name: 'COLOUR' }], ...stmt, style: 'light_blocks', tooltip: 'Der ganze Baum leuchtet in dieser Farbe.' }),
+  kid('dot', { type: 'light_pixel', message0: 'färbe Pixel %1 %2', args0: [{ ...num, name: 'PIXEL' }, { ...colour, name: 'COLOUR' }], ...stmt, style: 'light_blocks', tooltip: 'Ein einzelnes Pixel leuchtet. Die Pixel haben die Nummern 0 bis 475.' }),
+  kid('dots', { type: 'light_range', message0: 'färbe Pixel %1 bis %2 %3', args0: [{ ...num, name: 'FROM' }, { ...num, name: 'TO' }, { ...colour, name: 'COLOUR' }], ...stmt, style: 'light_blocks', tooltip: 'Viele Pixel hintereinander leuchten in einer Farbe.' }),
+  kid('branch', { type: 'light_strip', message0: 'färbe Ast %1 %2', args0: [{ ...num, name: 'STRIP' }, { ...colour, name: 'COLOUR' }], ...stmt, style: 'light_blocks', tooltip: 'Ein ganzer Ast leuchtet. Die Äste haben die Nummern 0 bis 21, von links nach rechts.' }),
+  kid('pin', { type: 'light_strip_pixel', message0: 'färbe auf Ast %1 das Pixel Nr. %2 %3', args0: [{ ...num, name: 'STRIP' }, { ...num, name: 'INDEX' }, { ...colour, name: 'COLOUR' }], ...stmt, style: 'light_blocks', tooltip: 'Ein Pixel auf einem bestimmten Ast. Unten am Ast ist Nr. 0.' }),
+  kid('power', { type: 'light_off', message0: 'alle Pixel aus', ...stmt, style: 'light_blocks', tooltip: 'Alles wird dunkel.' }),
+  kid('moon', { type: 'light_fade', message0: 'alles dunkler um %1 %%', args0: [{ ...num, name: 'PERCENT' }], ...stmt, style: 'light_blocks', tooltip: 'Jedes Pixel wird ein bisschen dunkler. Immer wieder gemacht, gibt das schöne Leuchtspuren.' }),
+  kid('sun', { type: 'light_brightness', message0: 'Helligkeit %1 %%', args0: [{ ...num, name: 'PERCENT' }], ...stmt, style: 'light_blocks', tooltip: 'So hell leuchtet der ganze Baum. 100 ist am hellsten.' }),
+  kid('eye', { type: 'light_get', message0: 'Farbe von Pixel %1', args0: [{ ...num, name: 'PIXEL' }], output: 'Colour', inputsInline: true, style: 'light_blocks', tooltip: 'Welche Farbe hat dieses Pixel gerade?' }),
+  kid('hash', { type: 'light_info', message0: '%1', args0: [{ type: 'field_dropdown', name: 'WHAT', options: [['Anzahl Pixel (476)', 'PIXELS'], ['Anzahl Äste (22)', 'STRIPS']] }], output: 'Number', style: 'light_blocks', tooltip: 'Wie viele Pixel oder Äste der Baum hat.' }),
+  kid('branch', { type: 'light_strip_info', message0: '%1 von Ast %2', args0: [{ type: 'field_dropdown', name: 'WHAT', options: [['Anzahl Pixel', 'stripLength'], ['erstes Pixel', 'stripStart']] }, { ...num, name: 'STRIP' }], output: 'Number', inputsInline: true, style: 'light_blocks', tooltip: 'Wie viele Pixel ein Ast hat, oder welche Nummer sein erstes Pixel hat.' }),
+  kid('pin', { type: 'light_pixel_info', message0: '%1 von Pixel %2', args0: [{ type: 'field_dropdown', name: 'WHAT', options: [['Höhe (0 bis 100)', 'heightOf'], ['links/rechts (−100 bis 100)', 'xOf'], ['Stelle am Ast (0 bis 100)', 'posOf'], ['Ast-Nummer', 'stripOf']] }, { ...num, name: 'PIXEL' }], output: 'Number', inputsInline: true, style: 'light_blocks', tooltip: 'Wo sitzt das Pixel am Baum? Ganz unten ist die Höhe 0, ganz oben 100.' }),
+  kid('rainbow', { type: 'colour_hsv', message0: 'Regenbogen %1 bunt %2 hell %3', args0: [{ ...num, name: 'H' }, { ...num, name: 'S' }, { ...num, name: 'V' }], output: 'Colour', inputsInline: true, style: 'colour_blocks', tooltip: 'Regenbogen: 0 ist rot, 60 gelb, 120 grün, 240 blau, 360 wieder rot. «bunt» und «hell» gehen von 0 bis 100.' }),
+  kid('mix', { type: 'colour_rgbw', message0: 'rot %1 grün %2 blau %3 weiss %4', args0: [{ ...num, name: 'R' }, { ...num, name: 'G' }, { ...num, name: 'B' }, { ...num, name: 'W' }], output: 'Colour', inputsInline: true, style: 'colour_blocks', tooltip: 'In jedem Pixel sind vier Lämpchen: rot, grün, blau und weiss. Jedes geht von 0 (aus) bis 255 (ganz hell).' }),
+  kid('bulb', { type: 'colour_white', message0: 'weisses Licht %1 %%', args0: [{ ...num, name: 'PERCENT' }], output: 'Colour', inputsInline: true, style: 'colour_blocks', tooltip: 'Nur das warmweisse Lämpchen in jedem Pixel.' }),
+  kid('dim', { type: 'colour_dim', message0: '%1 nur %2 %% hell', args0: [{ ...colour, name: 'COLOUR' }, { ...num, name: 'PERCENT' }], output: 'Colour', inputsInline: true, style: 'colour_blocks', tooltip: 'Dieselbe Farbe, nur dunkler.' }),
+  kid('repeat', { type: 'ctrl_forever', message0: 'immer wieder', message1: '%1', args1: [{ type: 'input_statement', name: 'DO' }], previousStatement: null, style: 'loop_blocks', tooltip: 'Die Blöcke darin laufen immer wieder, ohne Ende.' }),
+  kid('clock', { type: 'ctrl_wait', message0: 'warte %1 Sekunden', args0: [{ ...num, name: 'SECONDS' }], ...stmt, style: 'loop_blocks', tooltip: 'Kurz warten. So siehst du jeden Schritt am Baum.' }),
+  kid('stopwatch', { type: 'ctrl_time', message0: 'Sekunden seit dem Start', output: 'Number', style: 'loop_blocks', tooltip: 'Diese Zahl wird immer grösser, solange das Programm läuft.' }),
+]);
+
+const V = (b, n, d = '0') => G.valueToCode(b, n, O.NONE) || d;
+const C = (b, n) => G.valueToCode(b, n, O.NONE) || "'#000000'";
+Object.assign(G.forBlock, {
+  light_fill: (b) => `fill(${C(b, 'COLOUR')});\n`,
+  light_pixel: (b) => `setPixel(${V(b, 'PIXEL')}, ${C(b, 'COLOUR')});\n`,
+  light_range: (b) => `setPixels(${V(b, 'FROM')}, ${V(b, 'TO')}, ${C(b, 'COLOUR')});\n`,
+  light_strip: (b) => `setStrip(${V(b, 'STRIP')}, ${C(b, 'COLOUR')});\n`,
+  light_strip_pixel: (b) => `setStripPixel(${V(b, 'STRIP')}, ${V(b, 'INDEX')}, ${C(b, 'COLOUR')});\n`,
+  light_off: () => 'off();\n',
+  light_fade: (b) => `fade(${V(b, 'PERCENT')});\n`,
+  light_brightness: (b) => `brightness(${V(b, 'PERCENT', '100')});\n`,
+  light_get: (b) => [`getPixel(${V(b, 'PIXEL')})`, O.FUNCTION_CALL],
+  light_info: (b) => [b.getFieldValue('WHAT'), O.ATOMIC],
+  light_strip_info: (b) => [`${b.getFieldValue('WHAT')}(${V(b, 'STRIP')})`, O.FUNCTION_CALL],
+  light_pixel_info: (b) => [`${b.getFieldValue('WHAT')}(${V(b, 'PIXEL')})`, O.FUNCTION_CALL],
+  colour_hsv: (b) => [`hsv(${V(b, 'H')}, ${V(b, 'S', '100')}, ${V(b, 'V', '100')})`, O.FUNCTION_CALL],
+  colour_rgbw: (b) => [`rgbw(${V(b, 'R')}, ${V(b, 'G')}, ${V(b, 'B')}, ${V(b, 'W')})`, O.FUNCTION_CALL],
+  colour_white: (b) => [`white(${V(b, 'PERCENT', '100')})`, O.FUNCTION_CALL],
+  colour_dim: (b) => [`dim(${C(b, 'COLOUR')}, ${V(b, 'PERCENT', '100')})`, O.FUNCTION_CALL],
+  colour_random: () => ['randomColour()', O.FUNCTION_CALL],
+  colour_blend: (b) => [`blend(${C(b, 'COLOUR1')}, ${C(b, 'COLOUR2')}, ${V(b, 'RATIO', '0.5')})`, O.FUNCTION_CALL],
+  ctrl_forever: (b) => `while (true) {\n${G.statementToCode(b, 'DO')}${G.INDENT}await frame();\n}\n`,
+  ctrl_wait: (b) => `await wait(${V(b, 'SECONDS')});\n`,
+  ctrl_time: () => ['time()', O.FUNCTION_CALL],
+});
+G.addReservedWords(API_KEYS.join(','));
+
+const sh = { n: (v) => ({ shadow: { type: 'math_number', fields: { NUM: v } } }), c: (hex) => ({ shadow: { type: 'colour_picker', fields: { COLOUR: hex } } }) };
+const toolbox = { kind: 'categoryToolbox', contents: [
+  { kind: 'category', name: 'Licht', categorystyle: 'light_category', cssconfig: { icon: 'catIcon cat-light' }, contents: [
+    { kind: 'block', type: 'light_fill', inputs: { COLOUR: sh.c('#ff5a1f') } },
+    { kind: 'block', type: 'light_pixel', inputs: { PIXEL: sh.n(0), COLOUR: sh.c('#ff5a1f') } },
+    { kind: 'block', type: 'light_range', inputs: { FROM: sh.n(0), TO: sh.n(99), COLOUR: sh.c('#00e6ff') } },
+    { kind: 'block', type: 'light_strip', inputs: { STRIP: sh.n(0), COLOUR: sh.c('#8cff00') } },
+    { kind: 'block', type: 'light_strip_pixel', inputs: { INDEX: sh.n(0), STRIP: sh.n(0), COLOUR: sh.c('#ff00ff') } },
+    { kind: 'block', type: 'light_off' },
+    { kind: 'block', type: 'light_fade', inputs: { PERCENT: sh.n(10) } },
+    { kind: 'block', type: 'light_brightness', inputs: { PERCENT: sh.n(100) } },
+    { kind: 'sep', gap: 28 },
+    { kind: 'block', type: 'light_pixel_info', inputs: { PIXEL: sh.n(0) } },
+    { kind: 'block', type: 'light_strip_info', inputs: { STRIP: sh.n(0) } },
+    { kind: 'block', type: 'light_info' },
+    { kind: 'block', type: 'light_get', inputs: { PIXEL: sh.n(0) } },
+  ] },
+  { kind: 'category', name: 'Farbe', categorystyle: 'colour_category', cssconfig: { icon: 'catIcon cat-colour' }, contents: [
+    { kind: 'block', type: 'colour_picker', fields: { COLOUR: '#ff5a1f' } },
+    { kind: 'block', type: 'colour_hsv', inputs: { H: sh.n(20), S: sh.n(100), V: sh.n(100) } },
+    { kind: 'block', type: 'colour_rgbw', inputs: { R: sh.n(255), G: sh.n(90), B: sh.n(20), W: sh.n(0) } },
+    { kind: 'block', type: 'colour_white', inputs: { PERCENT: sh.n(100) } },
+    { kind: 'block', type: 'colour_random' },
+    { kind: 'block', type: 'colour_blend', inputs: { COLOUR1: sh.c('#ff0000'), COLOUR2: sh.c('#ffc800'), RATIO: sh.n(0.5) } },
+    { kind: 'block', type: 'colour_dim', inputs: { COLOUR: sh.c('#ff5a1f'), PERCENT: sh.n(50) } },
+  ] },
+  { kind: 'category', name: 'Steuerung', categorystyle: 'control_category', cssconfig: { icon: 'catIcon cat-control' }, contents: [
+    { kind: 'block', type: 'ctrl_forever' },
+    { kind: 'block', type: 'ctrl_wait', inputs: { SECONDS: sh.n(0.5) } },
+    { kind: 'block', type: 'controls_repeat_ext', inputs: { TIMES: sh.n(10) } },
+    { kind: 'block', type: 'controls_for', inputs: { FROM: sh.n(0), TO: sh.n(475), BY: sh.n(1) } },
+    { kind: 'block', type: 'controls_whileUntil' },
+    { kind: 'block', type: 'controls_flow_statements' },
+    { kind: 'block', type: 'ctrl_time' },
+  ] },
+  { kind: 'category', name: 'Logik', categorystyle: 'logic_category', cssconfig: { icon: 'catIcon cat-logic' }, contents: [
+    { kind: 'block', type: 'controls_if' },
+    { kind: 'block', type: 'controls_if', extraState: { hasElse: true } },
+    { kind: 'block', type: 'logic_compare' },
+    { kind: 'block', type: 'logic_operation' },
+    { kind: 'block', type: 'logic_negate' },
+    { kind: 'block', type: 'logic_boolean' },
+    { kind: 'block', type: 'logic_ternary' },
+  ] },
+  { kind: 'category', name: 'Mathematik', categorystyle: 'math_category', cssconfig: { icon: 'catIcon cat-math' }, contents: [
+    { kind: 'block', type: 'math_number', fields: { NUM: 0 } },
+    { kind: 'block', type: 'math_arithmetic', inputs: { A: sh.n(1), B: sh.n(1) } },
+    { kind: 'block', type: 'math_single', inputs: { NUM: sh.n(9) } },
+    { kind: 'block', type: 'math_trig', inputs: { NUM: sh.n(45) } },
+    { kind: 'block', type: 'math_round', inputs: { NUM: sh.n(3.1) } },
+    { kind: 'block', type: 'math_modulo', inputs: { DIVIDEND: sh.n(64), DIVISOR: sh.n(10) } },
+    { kind: 'block', type: 'math_random_int', inputs: { FROM: sh.n(0), TO: sh.n(475) } },
+    { kind: 'block', type: 'math_random_float' },
+    { kind: 'block', type: 'math_constrain', inputs: { VALUE: sh.n(50), LOW: sh.n(0), HIGH: sh.n(100) } },
+    { kind: 'block', type: 'math_number_property', inputs: { NUMBER_TO_CHECK: sh.n(0) } },
+  ] },
+  { kind: 'category', name: 'Variablen', categorystyle: 'variable_category', cssconfig: { icon: 'catIcon cat-variable' }, custom: 'VARIABLE' },
+] };
+
+// In-page dialogs (Blockly would otherwise call window.prompt)
+function modal({ message, input = false, value = '', cancel = true }) {
+  return new Promise((resolve) => {
+    const m = $('modal'), f = $('modal-form'), inp = $('modal-input');
+    $('modal-msg').textContent = message;
+    inp.hidden = !input; inp.value = value;
+    $('modal-cancel').hidden = !cancel;
+    m.hidden = false;
+    (input ? inp : $('modal-ok')).focus();
+    const done = (v) => { m.hidden = true; f.onsubmit = null; $('modal-cancel').onclick = null; m.onkeydown = null; resolve(v); };
+    f.onsubmit = (e) => { e.preventDefault(); done(input ? inp.value : true); };
+    $('modal-cancel').onclick = () => done(input ? null : false);
+    m.onkeydown = (e) => { if (e.key === 'Escape') done(input ? null : false); };
+  });
+}
+Blockly.dialog.setPrompt((msg, def, cb) => modal({ message: msg, input: true, value: def }).then(cb));
+Blockly.dialog.setConfirm((msg, cb) => modal({ message: msg }).then((v) => cb(!!v)));
+Blockly.dialog.setAlert((msg, cb) => modal({ message: msg, cancel: false }).then(() => cb && cb()));
+
+const ws = Blockly.inject('blockly', {
+  toolbox, theme, renderer: 'zelos', trashcan: false, sounds: false,
+  media: 'https://cdnjs.cloudflare.com/ajax/libs/blockly/10.4.3/media/',
+  grid: { spacing: 24, length: 2, colour: '#2c2527', snap: false },
+  zoom: { controls: false, wheel: true, startScale: $('blockly').clientWidth < 520 ? 0.64 : 0.8, maxScale: 1.6, minScale: 0.35, scaleSpeed: 1.12 },
+  move: { scrollbars: true, drag: true, wheel: true },
+});
+new ResizeObserver(() => Blockly.svgResize(ws)).observe($('blockly'));
+
+/* ---------- code generation ---------- */
+function generate(traps) {
+  G.INFINITE_LOOP_TRAP = traps ? 'await __trap();\n' : null;
+  G.init(ws);
+  const stacks = [];
+  for (const b of ws.getTopBlocks(true)) {
+    if (b.outputConnection || !b.isEnabled()) continue;
+    let c = G.blockToCode(b); if (Array.isArray(c)) c = c[0];
+    if (c && c.trim()) stacks.push(c);
+  }
+  const defs = G.finish('').trim();
+  const body = stacks.length <= 1 ? (stacks[0] || '')
+    : '// Diese Blockstapel laufen gleichzeitig\n' + stacks.map((s) => `start(async () => {\n${G.prefixLines(s, G.INDENT)}});\n`).join('\n');
+  return (defs ? defs + '\n\n' : '') + body;
+}
+
+let mode = store.get('plantoid.mode', 'blocks'), lastExec = null, rebuildTimer = 0;
+function rebuild(force = false) {
+  if (mode !== 'blocks') return;
+  const shown = generate(false), exec = generate(true);
+  if (!$('code-pane').hidden) showCode(shown);
+  if (!force && exec === lastExec) return;
+  lastExec = exec;
+  runProgram(exec);
+}
+ws.addChangeListener((e) => {
+  if (e.isUiEvent || ws.isDragging()) return;
+  store.set('plantoid.draft', Blockly.serialization.workspaces.save(ws));
+  clearTimeout(rebuildTimer);
+  rebuildTimer = setTimeout(() => rebuild(), 200);
+});
+
+/* =====================================================================
+   Examples (written as blocks, like the ones on the exhibit's screen)
+   ===================================================================== */
+const B = (type, o = {}) => {
+  let x = `<block type="${type}">`;
+  for (const [k, v] of Object.entries(o.f || {})) x += `<field name="${k}">${v}</field>`;
+  for (const [k, v] of Object.entries(o.v || {})) x += `<value name="${k}">${v}</value>`;
+  for (const [k, v] of Object.entries(o.s || {})) x += `<statement name="${k}">${v}</statement>`;
+  return x + '</block>';
+};
+const N = (v) => (typeof v === 'number' ? `<shadow type="math_number"><field name="NUM">${v}</field></shadow>` : v);
+const Cc = (c) => (c.startsWith('#') ? `<shadow type="colour_picker"><field name="COLOUR">${c}</field></shadow>` : c);
+const seq = (...bs) => bs.reduceRight((acc, b) => (acc ? b.replace(/<\/block>$/, `<next>${acc}</next></block>`) : b), '');
+const ar = (op, a, b) => B('math_arithmetic', { f: { OP: op }, v: { A: N(a), B: N(b) } });
+const get = (n) => B('variables_get', { f: { VAR: n } });
+const setv = (n, v) => B('variables_set', { f: { VAR: n }, v: { VALUE: N(v) } });
+const loop = (n, from, to, body) => B('controls_for', { f: { VAR: n }, v: { FROM: N(from), TO: N(to), BY: N(1) }, s: { DO: body } });
+const forever = (body) => B('ctrl_forever', { s: { DO: body } });
+const wait = (s) => B('ctrl_wait', { v: { SECONDS: N(s) } });
+const hsv = (h, s, v) => B('colour_hsv', { v: { H: N(h), S: N(s), V: N(v) } });
+const fill = (c) => B('light_fill', { v: { COLOUR: Cc(c) } });
+const px = (i, c) => B('light_pixel', { v: { PIXEL: N(i), COLOUR: Cc(c) } });
+const strip = (s, c) => B('light_strip', { v: { STRIP: N(s), COLOUR: Cc(c) } });
+const stripPx = (k, s, c) => B('light_strip_pixel', { v: { INDEX: N(k), STRIP: N(s), COLOUR: Cc(c) } });
+const fade = (p) => B('light_fade', { v: { PERCENT: N(p) } });
+const info = (w) => B('light_info', { f: { WHAT: w } });
+const pinfo = (w, i) => B('light_pixel_info', { f: { WHAT: w }, v: { PIXEL: N(i) } });
+const sinfo = (w, s) => B('light_strip_info', { f: { WHAT: w }, v: { STRIP: N(s) } });
+const time = () => B('ctrl_time');
+const sin = (x) => B('math_trig', { f: { OP: 'SIN' }, v: { NUM: N(x) } });
+const rnd = (a, b) => B('math_random_int', { v: { FROM: N(a), TO: N(b) } });
+const mod = (a, b) => B('math_modulo', { v: { DIVIDEND: N(a), DIVISOR: N(b) } });
+const floorOf = (x) => B('math_round', { f: { OP: 'ROUNDDOWN' }, v: { NUM: N(x) } });
+const abs = (x) => B('math_single', { f: { OP: 'ABS' }, v: { NUM: N(x) } });
+const lt = (a, b) => B('logic_compare', { f: { OP: 'LT' }, v: { A: N(a), B: N(b) } });
+const iff = (c, then) => B('controls_if', { v: { IF0: c }, s: { DO0: then } });
+const repeat = (n, body) => B('controls_repeat_ext', { v: { TIMES: N(n) }, s: { DO: body } });
+const rcol = () => B('colour_random');
+const whiteC = (p) => B('colour_white', { v: { PERCENT: N(p) } });
+const getPx = (i) => B('light_get', { v: { PIXEL: N(i) } });
+const LASTP = () => ar('MINUS', info('PIXELS'), 1);
+const LASTS = () => ar('MINUS', info('STRIPS'), 1);
+const at = (xml, x, y) => xml.replace('<block ', `<block x="${x}" y="${y}" `);
+const xml = (...stacks) => `<xml xmlns="https://developers.google.com/blockly/xml">${stacks.join('')}</xml>`;
+
+const EXAMPLES = [
+  { level: 1, name: 'Warmes Glühen', desc: 'Nur ein Block: Der ganze Baum leuchtet orange, wie im Technorama.', sw: ['#ff4a12', '#ff6a2b', '#ff8a3d'],
+    xml: xml(at(fill('#ff5a1f'), 24, 24)) },
+  { level: 1, name: 'Blau ↔ Violett', desc: 'Der Baum wechselt sanft von Blau zu Violett und wieder zurück. Mit zwei Zähl-Schleifen.', sw: ['#0000ff', '#5a1aff', '#9932cc'],
+    xml: xml(at(forever(seq(
+      loop('h', 240, 280, seq(fill(hsv(get('h'), 100, 100)), wait(0.05))),
+      loop('h', 280, 240, seq(fill(hsv(get('h'), 100, 100)), wait(0.05))))), 24, 24)) },
+  { level: 1, name: 'Ast für Ast', desc: 'Ein Ast nach dem anderen bekommt eine Zufallsfarbe.', sw: ['#ff3d6e', '#3dd6ff', '#b4ff3d', '#ffb43d'],
+    xml: xml(at(forever(seq(
+      loop('s', 0, LASTS(), seq(strip(get('s'), rcol()), wait(0.12))),
+      loop('s', 0, LASTS(), seq(strip(get('s'), '#000000'), wait(0.06))))), 24, 24)) },
+  { level: 1, name: 'Herzschlag', desc: 'Der Baum blinkt zweimal und wird dann langsam dunkel. Wie ein Herz.', sw: ['#ff1838', '#5a0010', '#ff1838', '#200006'],
+    xml: xml(at(forever(seq(fill('#ff1838'), repeat(10, seq(fade(18), wait(0.025))), fill('#ff1838'), repeat(45, seq(fade(8), wait(0.025))))), 24, 24)) },
+  { level: 2, name: 'Glühwürmchen', desc: 'Kleine Lichter blitzen auf und verglühen langsam.', sw: ['#0d0a02', '#d9ff6b', '#0d0a02', '#ffe08a'],
+    xml: xml(at(forever(seq(fade(3), px(rnd(0, LASTP()), hsv(rnd(40, 70), 60, 100)), wait(0.03))), 24, 24)) },
+  { level: 2, name: 'Zwei Programme gleichzeitig', desc: 'Zwei Programme laufen zur gleichen Zeit: bunte Äste und weisse Funken.', sw: ['#ff3d6e', '#ffffff', '#3dd6ff', '#ffffff'],
+    xml: xml(
+      at(forever(seq(strip(rnd(0, LASTS()), rcol()), wait(0.5))), 24, 24),
+      at(forever(seq(setv('p', rnd(0, LASTP())), setv('c', getPx(get('p'))), px(get('p'), whiteC(100)), wait(0.08), px(get('p'), get('c')))), 24, 230)) },
+  { level: 2, name: 'Regenbogen', desc: 'Die Farben klettern vom Stamm bis zu den Spitzen.', sw: ['#ff0040', '#ffd000', '#00ff8c', '#0090ff', '#c000ff'],
+    xml: xml(at(forever(loop('i', 0, LASTP(), px(get('i'), hsv(ar('MINUS', ar('MULTIPLY', pinfo('heightOf', get('i')), 3.6), ar('MULTIPLY', time(), 90)), 100, 100)))), 24, 24)) },
+  { level: 3, name: 'Schimmern', desc: 'Das Orange flimmert sanft. Mit ein bisschen Mathematik.', sw: ['#ff4a12', '#ff8a3d', '#ffc08a'],
+    xml: xml(at(forever(loop('i', 0, LASTP(), px(get('i'), hsv(
+      ar('ADD', 16, ar('MULTIPLY', 6, sin(ar('ADD', ar('MULTIPLY', get('i'), 20), ar('MULTIPLY', time(), 60))))),
+      90,
+      ar('ADD', 80, ar('MULTIPLY', 20, sin(ar('MINUS', ar('MULTIPLY', get('i'), 9), ar('MULTIPLY', time(), 140))))))))), 24, 24)) },
+  { level: 3, name: 'Feuer', desc: 'Unten gelb, oben rot. Es flackert wie ein Feuer.', sw: ['#ffd23a', '#ff7a12', '#e01e00', '#3a0500'],
+    xml: xml(at(forever(seq(
+      loop('i', 0, LASTP(), seq(
+        setv('h', pinfo('heightOf', get('i'))),
+        px(get('i'), hsv(ar('ADD', ar('MINUS', 38, ar('MULTIPLY', get('h'), 0.36)), rnd(-3, 3)), 100, ar('MINUS', rnd(50, 100), ar('MULTIPLY', get('h'), 0.45)))))),
+      wait(0.06))), 24, 24)) },
+  { level: 3, name: 'Regen', desc: 'Auf jedem Ast rinnt ein Tropfen nach unten.', sw: ['#061826', '#2a6f9e', '#8fd3ff'],
+    xml: xml(at(forever(seq(
+      fade(35),
+      loop('s', 0, LASTS(), stripPx(
+        ar('MINUS', ar('MINUS', sinfo('stripLength', get('s')), 1), mod(floorOf(ar('ADD', ar('MULTIPLY', time(), 14), ar('MULTIPLY', get('s'), 7))), sinfo('stripLength', get('s')))),
+        get('s'), '#8fd3ff')),
+      wait(0.03))), 24, 24)) },
+  { level: 3, name: 'Scanner', desc: 'Ein Lichtstrahl wandert hin und her.', sw: ['#001a1f', '#45e6ff', '#001a1f'],
+    xml: xml(at(forever(seq(
+      fade(18),
+      setv('x', ar('MULTIPLY', 100, sin(ar('MULTIPLY', time(), 90)))),
+      loop('i', 0, LASTP(), iff(lt(abs(ar('MINUS', pinfo('xOf', get('i')), get('x'))), 9), px(get('i'), '#45e6ff'))))), 24, 24)) },
+];
+const LEVELS = ['', 'leicht', 'mittel', 'knifflig'];
+
+function loadXml(text) {
+  Blockly.Events.setGroup(true);
+  ws.clear();
+  Blockly.Xml.domToWorkspace(Blockly.utils.xml.textToDom(text), ws);
+  Blockly.Events.setGroup(false);
+  ws.scrollCenter();
+}
+function placeTopLeft() {
+  if (!ws.getTopBlocks().length) return;
+  const box = ws.getBlocksBoundingBox(), s = ws.scale;
+  ws.scroll(-box.left * s + 28, -box.top * s + 24);
+}
+
+/* =====================================================================
+   Desk UI: tabs, code view, text mode, menus, backpack, broom
+   ===================================================================== */
+const codeText = $('code-text'), codeHl = $('code-hl');
+const esc = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
+const API_RE = new RegExp(`\\b(${API_KEYS.filter((k) => !k.startsWith('_') && k !== 'PIXELS' && k !== 'STRIPS').join('|')})(?=\\s*\\()`);
+function highlight(code) {
+  const re = /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|('(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|`(?:\\.|[^`\\])*`)|\b(\d+(?:\.\d+)?)\b|\b(var|let|const|function|async|await|return|if|else|for|while|do|break|continue|true|false|null|new|of|in|typeof)\b|\b([A-Za-z_$][\w$]*)(?=\s*\()|\b(PIXELS|STRIPS|Math)\b/g;
+  let out = '', i = 0, m;
+  while ((m = re.exec(code))) {
+    out += esc(code.slice(i, m.index));
+    const t = esc(m[0]);
+    if (m[1]) out += `<span class="hl-c">${t}</span>`;
+    else if (m[2]) { const hex = /^['"]#([0-9a-f]{6})/i.exec(m[2]); out += hex ? `<span class="hl-s" style="--sw:#${hex[1]}">${t}</span>` : `<span class="hl-s">${t}</span>`; }
+    else if (m[3]) out += `<span class="hl-n">${t}</span>`;
+    else if (m[4]) out += `<span class="hl-k">${t}</span>`;
+    else if (m[5]) out += `<span class="${API_RE.test(m[0] + '(') ? 'hl-f' : 'hl-a'}">${t}</span>`;
+    else out += `<span class="hl-n">${t}</span>`;
+    i = m.index + m[0].length;
+  }
+  return out + esc(code.slice(i)) + '\n';
+}
+function showCode(code) { if (codeText.value !== code) codeText.value = code; codeHl.innerHTML = highlight(code); }
+codeText.addEventListener('scroll', () => { const pre = codeHl.parentElement; pre.scrollTop = codeText.scrollTop; pre.scrollLeft = codeText.scrollLeft; });
+
+// In text mode, every loop body gets an escape hatch so an endless loop can't freeze the page.
+function addLoopTraps(code) {
+  let out = '', i = 0; const n = code.length;
+  const word = (w) => code.startsWith(w, i) && !/[\w$.]/.test(code[i - 1] || '') && !/[\w$]/.test(code[i + w.length] || '');
+  while (i < n) {
+    const ch = code[i];
+    if (ch === '/' && code[i + 1] === '/') { const j = code.indexOf('\n', i); const e = j < 0 ? n : j; out += code.slice(i, e); i = e; continue; }
+    if (ch === '/' && code[i + 1] === '*') { const j = code.indexOf('*/', i + 2); const e = j < 0 ? n : j + 2; out += code.slice(i, e); i = e; continue; }
+    if (ch === '"' || ch === "'" || ch === '`') { let j = i + 1; while (j < n && code[j] !== ch) { if (code[j] === '\\') j++; j++; } out += code.slice(i, j + 1); i = j + 1; continue; }
+    const kw = word('for') ? 'for' : word('while') ? 'while' : null;
+    if (kw) {
+      let j = i + kw.length; while (/\s/.test(code[j] || '')) j++;
+      if (code[j] === '(') {
+        let depth = 0, k = j;
+        for (; k < n; k++) { if (code[k] === '(') depth++; else if (code[k] === ')' && --depth === 0) break; }
+        let q = k + 1; while (/\s/.test(code[q] || '')) q++;
+        if (code[q] === '{') { out += code.slice(i, q + 1) + ' await __trap();'; i = q + 1; continue; }
+      }
+    }
+    if (word('do')) { let q = i + 2; while (/\s/.test(code[q] || '')) q++; if (code[q] === '{') { out += code.slice(i, q + 1) + ' await __trap();'; i = q + 1; continue; } }
+    out += ch; i++;
+  }
+  return out;
+}
+
+function selectTab(which) {
+  const code = which === 'code';
+  $('tab-blocks').setAttribute('aria-selected', String(!code));
+  $('tab-code').setAttribute('aria-selected', String(code));
+  $('code-pane').hidden = !code;
+  $('blockly').style.visibility = code ? 'hidden' : '';
+  $('paused').hidden = code || mode !== 'text';
+  if (code) { if (mode === 'blocks') showCode(generate(false)); }
+  else requestAnimationFrame(() => Blockly.svgResize(ws));
+}
+$('tab-blocks').onclick = () => selectTab('blocks');
+$('tab-code').onclick = () => selectTab('code');
+
+let textTimer = 0;
+function runText() { lastExec = null; runProgram(addLoopTraps(codeText.value)); }
+function setMode(m) {
+  mode = m; store.set('plantoid.mode', m);
+  const text = m === 'text';
+  codeText.readOnly = !text;
+  $('btn-edit-text').hidden = text;
+  $('btn-back-blocks').hidden = !text;
+  $('code-note').innerHTML = text ? '<b>Text-Modus.</b> Der Baum macht, was hier steht.' : 'So sieht dein Programm als Text-Code aus. So programmieren Profis.';
+  $('paused').hidden = !text || !$('code-pane').hidden;
+}
+$('btn-edit-text').onclick = () => {
+  setMode('text');
+  store.set('plantoid.text', codeText.value);
+  codeText.focus();
+  runText();
+};
+const backToBlocks = () => { setMode('blocks'); lastExec = null; selectTab('blocks'); rebuild(true); };
+$('btn-back-blocks').onclick = backToBlocks;
+$('btn-paused-back').onclick = backToBlocks;
+codeText.addEventListener('input', () => {
+  codeHl.innerHTML = highlight(codeText.value);
+  store.set('plantoid.text', codeText.value);
+  clearTimeout(textTimer); textTimer = setTimeout(runText, 450);
+});
+codeText.addEventListener('keydown', (e) => {
+  if (codeText.readOnly) return;
+  const { selectionStart: s, selectionEnd: t, value } = codeText;
+  if (e.key === 'Tab') { e.preventDefault(); codeText.setRangeText('  ', s, t, 'end'); codeText.dispatchEvent(new Event('input')); }
+  else if (e.key === 'Enter') {
+    const line = value.slice(value.lastIndexOf('\n', s - 1) + 1, s);
+    let ind = /^\s*/.exec(line)[0]; if (/[{(\[]\s*$/.test(line)) ind += '  ';
+    e.preventDefault(); codeText.setRangeText('\n' + ind, s, t, 'end'); codeText.dispatchEvent(new Event('input'));
+  }
+});
+
+// menus
+const menus = [['btn-examples', 'menu-examples'], ['btn-backpack', 'menu-backpack']];
+function closeMenus(except) {
+  for (const [b, m] of menus) if (m !== except) { $(m).hidden = true; $(b).setAttribute('aria-expanded', 'false'); }
+}
+for (const [b, m] of menus) $(b).addEventListener('click', (e) => {
+  e.stopPropagation();
+  const open = $(m).hidden;
+  closeMenus(m);
+  $(m).hidden = !open; $(b).setAttribute('aria-expanded', String(open));
+  if (open && m === 'menu-backpack') setTimeout(() => $('bp-name').focus(), 0);
+});
+document.addEventListener('click', (e) => { if (!e.target.closest('.menu-wrap')) closeMenus(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeMenus(); if (!$('help').hidden) closeHelp(); } });
+function openHelp() { closeMenus(); $('help').hidden = false; $('btn-help-close').focus(); }
+function closeHelp() { $('help').hidden = true; store.set('plantoid.helpSeen', true); }
+$('btn-help').onclick = openHelp;
+$('btn-help-close').onclick = closeHelp;
+$('help').addEventListener('click', (e) => { if (e.target.id === 'help') closeHelp(); });
+
+for (const ex of EXAMPLES) {
+  const b = document.createElement('button');
+  b.className = 'ex';
+  b.innerHTML = `<i style="background:linear-gradient(135deg, ${ex.sw.join(', ')})"></i><span><b>${ex.name}<em class="lvl lvl-${ex.level}">${LEVELS[ex.level]}</em></b><small>${ex.desc}</small></span>`;
+  b.onclick = () => { closeMenus(); loadExample(ex); };
+  $('menu-examples').appendChild(b);
+}
+function loadExample(ex) {
+  if (mode === 'text') setMode('blocks');
+  selectTab('blocks');
+  loadXml(ex.xml);
+  placeTopLeft();
+  lastExec = null; rebuild(true);
+  toast(`«${ex.name}» geladen`, 'Rückgängig', () => ws.undo(false));
+}
+
+// backpack (the exhibit's rucksack)
+let memoryPack = null;
+const getPack = () => memoryPack || store.get('plantoid.backpack', []);
+const setPack = (p) => { if (!store.set('plantoid.backpack', p)) { memoryPack = p; $('bp-note').textContent = 'Dieser Browser blockiert den Speicher. Gespeicherte Programme bleiben nur, bis du die Seite schliesst.'; } renderPack(); };
+function renderPack() {
+  const p = getPack(), ul = $('bp-list');
+  $('bp-count').textContent = p.length || '';
+  ul.innerHTML = '';
+  if (!p.length) { const li = document.createElement('li'); li.innerHTML = '<p class="pop-note" style="margin:6px 10px">Der Rucksack ist noch leer. Gib deinem Programm einen Namen und speichere es.</p>'; ul.appendChild(li); return; }
+  p.forEach((item, i) => {
+    const li = document.createElement('li');
+    const load = document.createElement('button'); load.className = 'load';
+    load.innerHTML = `<b></b><small>${new Date(item.at).toLocaleString('de-CH', { dateStyle: 'medium', timeStyle: 'short' })}</small>`;
+    load.querySelector('b').textContent = item.name;
+    load.onclick = () => {
+      closeMenus();
+      if (mode === 'text') setMode('blocks');
+      selectTab('blocks');
+      Blockly.Events.setGroup(true); ws.clear(); Blockly.serialization.workspaces.load(item.json, ws); Blockly.Events.setGroup(false);
+      lastExec = null; rebuild(true);
+      toast(`«${item.name}» aus dem Rucksack geholt`, 'Rückgängig', () => ws.undo(false));
+    };
+    const del = document.createElement('button'); del.className = 'del'; del.textContent = '×'; del.title = `«${item.name}» entfernen`; del.setAttribute('aria-label', del.title);
+    del.onclick = (e) => { e.stopPropagation(); const q = getPack(); q.splice(i, 1); setPack(q); };
+    li.append(load, del); ul.appendChild(li);
+  });
+}
+$('bp-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  if (!ws.getTopBlocks().length) { toast('Es gibt noch keine Blöcke zum Speichern'); return; }
+  const name = $('bp-name').value.trim() || `Programm ${getPack().length + 1}`;
+  setPack([{ name, at: Date.now(), json: Blockly.serialization.workspaces.save(ws) }, ...getPack()].slice(0, 30));
+  $('bp-name').value = '';
+  toast(`«${name}» ist jetzt im Rucksack`);
+});
+renderPack();
+
+// broom
+$('btn-broom').onclick = () => {
+  if (mode === 'text') { codeText.value = ''; codeText.dispatchEvent(new Event('input')); return; }
+  if (!ws.getTopBlocks().length) return;
+  Blockly.Events.setGroup(true); ws.clear(); Blockly.Events.setGroup(false);
+  toast('Alles weggewischt', 'Rückgängig', () => ws.undo(false));
+};
+
+let toastTimer = 0;
+function toast(msg, action = '', fn = null) {
+  $('toast-msg').textContent = msg;
+  const a = $('toast-act'); a.textContent = action; a.onclick = () => { $('toast').hidden = true; fn && fn(); };
+  $('toast').hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('toast').hidden = true; }, 4200);
+}
+
+// run controls
+$('btn-run').onclick = () => {
+  if (RT.run) { stopProgram('stopped'); return; }
+  if (mode === 'text') runText(); else { lastExec = null; rebuild(true); }
+};
+$('btn-restart').onclick = () => { if (mode === 'text') runText(); else { lastExec = null; rebuild(true); } };
+
+// stage tools
+$('btn-numbers').onclick = (e) => {
+  showNumbers = !showNumbers;
+  e.currentTarget.setAttribute('aria-pressed', String(showNumbers));
+  labelsEl.hidden = !showNumbers;
+};
+$('btn-view').onclick = () => { fitView(); lastInteract = performance.now(); };
+$('btn-focus').onclick = (e) => {
+  const on = !document.body.classList.contains('focus');
+  document.body.classList.toggle('focus', on);
+  e.currentTarget.setAttribute('aria-pressed', String(on));
+  e.currentTarget.lastChild.textContent = on ? 'Pult zeigen' : 'Nur Baum';
+  e.currentTarget.title = on ? 'Programmierpult einblenden' : 'Programmierpult ausblenden';
+  if (!on) requestAnimationFrame(() => Blockly.svgResize(ws));
+};
+
+/* =====================================================================
+   Start: restore the last session, or open with the exhibition glow
+   ===================================================================== */
+{
+  let loaded = false;
+  const draft = store.get('plantoid.draft', null);
+  if (draft) { try { Blockly.serialization.workspaces.load(draft, ws); loaded = ws.getTopBlocks().length > 0; } catch { ws.clear(); } }
+  if (!loaded) { Blockly.Xml.domToWorkspace(Blockly.utils.xml.textToDom(EXAMPLES[0].xml), ws); }
+  if (!store.get('plantoid.helpSeen', false)) openHelp();
+  placeTopLeft();
+  ws.clearUndo();
+  if (mode === 'text') {
+    setMode('text');
+    showCode(store.get('plantoid.text', generate(false)));
+    selectTab('code');
+    runText();
+  } else {
+    setMode('blocks');
+    rebuild(true);
+  }
+}
+</script>
+</body>
+</html>
